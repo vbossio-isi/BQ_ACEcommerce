@@ -1,0 +1,93 @@
+{
+    "key": "API key",
+    "template_name": "dallas",
+    "template_content": null,
+    "message": {
+        "to": [
+            {
+                "email": "garyc@isi85.com",
+                "type": "to",
+                "name": "Gary Coggins"
+            }
+        ],
+        "headers": {
+            
+        },
+        "bcc_address": null,
+        "global_merge_vars": [
+            {
+                "content": "Dallas Castle",
+                "name": "venueName"
+            },
+            {
+                "content": "Buena Park, CA Castle",
+                "name": "venueAddress"
+            },
+            {
+                "content": "03 Feb 2022",
+                "name": "eventDate"
+            },
+            {
+                "content": "6PM",
+                "name": "eventTime"
+            },
+            {
+                "content": "12345test",
+                "name": "transactionId"
+            },
+            {
+                "content": "22 Jan 2022",
+                "name": "transactionDate"
+            },
+            {
+                "content": "327.84",
+                "name": "totalAmount"
+            },
+            {
+                "content": "303.80",
+                "name": "totalAmountNoTaxes"
+            },
+            {
+                "content": "24.04",
+                "name": "taxes"
+            },
+            {
+                "content": "75.95",
+                "name": "amount"
+            },
+            {
+                "content": "4",
+                "name": "qty"
+            },
+            {
+                "content": "ROYAL SKU# R - 17-20",
+                "name": "section"
+            },
+            {
+                "content": "Visa",
+                "name": "paymentMethod"
+            },
+            {
+                "content": "Adult",
+                "name": "ticketType"
+            },
+            {
+                "content": "<p class='table__label'> The tickets you have purchased are:</p><table class='table'><tr class='table__row head-row'><th class='table__head'>Item</th><th class='table__head'>Ticket Type</th><th class='table__head'>Price</th><th class='table__head'>QTY</th><th class='table__head align-right'>Amount</th></tr><tr class='table__row'><td class='table__item'>MEDIEVAL TOURNAMENT</td><td class='table__item'>TicketType here</td><td class='table__item'>Amount here</td><td class='table__item'>qty here</td><td class='table__item align-right'>totalAmountNoTaxes here</td></tr><tr class='table__row'><td class='table__item'>venueAddress here</td><td class='table__item'>Taxes and Fees</td><td class='table__item'></td><td class='table__item'></td><td class='table__item align-right'>taxes</td></tr><tr class='table__row'><td class='table__item'>Event Date Eventtime</td><td class='table__item'>Section: Section Info here</td><td class='table__item'></td><td class='table__item'></td><td class='table__item align-right'></td></tr><tr class='table__row align-right'><td class='table__item align-right'></td><td class='table__item align-right'>VISA</td><td class='table__item align-right'>Total</td><td class='table__item align-right'></td><td class='table__item bold align-right'>total amount</td></tr></table>",
+                "name": "transactionConfirmationTemplateHTML" 
+            }
+        ],
+        "tags": [
+            "transaction_confirmation"
+        ],
+        "subaccount": null,
+        "metadata": {
+
+        },
+        "recipient_metadata": [
+
+        ],
+        "google_analytics_domains": null,
+        "google_analytics_campaign": null
+    },
+    "async": false
+}
