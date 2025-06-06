@@ -1,0 +1,9 @@
+bin/*.dll
+bin/*.exe
+bin/*.pdb
+bin/Debug/*
+obj/
+
+# But don't ignore .json and .bat files in bin/Debug/net6.0
+!bin/Debug/net6.0/*.json
+!bin/Debug/net6.0/*.bat

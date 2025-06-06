@@ -287,7 +287,6 @@ namespace ACECommerce
 
         static async Task Main(string[] args)
         {
-
             IConfigurationBuilder builder = new ConfigurationBuilder().AddJsonFile("appsettings.json", false, true);
             IConfigurationRoot root = builder.Build();
 
@@ -590,7 +589,7 @@ namespace ACECommerce
 
                                     OracleDataAdapter daOrders = new OracleDataAdapter(
                                         loggingSettings.TransactionIdOverride ? queryOrdersSelectWithOverrideString.Replace("<TRANSACTIONLIST>", loggingSettings.TransactionList) :
-                                        queryOrdersSelectString.Replace("<Last_Updated_Dtm>", maxLast_Updated_DtmString),
+                                        queryTicketsSelectString.Replace("<Last_Updated_Dtm>", maxLast_Updated_DtmString),
                                             pvConnection);
 
                                     DataSet dsOrders = new DataSet();
