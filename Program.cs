@@ -71,6 +71,27 @@ namespace ACECommerce
         }
     }
 
+    public class EcomCustomerWrapper
+    {
+        [JsonPropertyName("ecomCustomer")]
+        public EcomCustomer Customer { get; set; }
+    }
+
+    public class EcomCustomer
+    {
+        [JsonPropertyName("connectionid")]
+        public string ConnectionId { get; set; }
+
+        [JsonPropertyName("externalid")]
+        public string ExternalId { get; set; }
+
+        [JsonPropertyName("email")]
+        public string Email { get; set; }
+
+        [JsonPropertyName("acceptsMarketing")]
+        public string AcceptsMarketing { get; set; } = "1";  // hardcoded
+    }
+
     public class ApiResponse
     {
         public bool IsSuccess { get; set; }
@@ -165,6 +186,81 @@ namespace ACECommerce
                 return null;
             }
         }
+
+        public async Task<ApiResponse> GetCustomerAsync(string URL, string connectionId, string emailAddress)
+        {
+            string url = $"https://{URL}/ecomCustomers?filters[connectionid]={connectionId}&filters[email]={Uri.EscapeDataString(emailAddress)}";
+
+            var requestMessage = new HttpRequestMessage(HttpMethod.Get, url);
+
+            requestMessage.Headers.Add("MT-Request-Token", Guid.NewGuid().ToString());
+
+            try
+            {
+                HttpResponseMessage response = await _client.SendAsync(requestMessage);
+                var apiResponse = new ApiResponse
+                {
+                    StatusCode = response.StatusCode,
+                    IsSuccess = response.IsSuccessStatusCode
+                };
+
+                if (response.IsSuccessStatusCode)
+                {
+                    apiResponse.Content = await response.Content.ReadAsStringAsync();
+                }
+                else
+                {
+                    apiResponse.ErrorMessage = await response.Content.ReadAsStringAsync();
+                }
+
+                return apiResponse;
+
+            }
+            catch (HttpRequestException e)
+            {
+                Console.WriteLine($"Error: {e.Message}");
+                return null;
+            }
+        }
+
+        public async Task<ApiResponse> PostCustomerAsync(string URL, string json, string path)
+        {
+            var url = $"https://{URL}/{path}";
+            var jsonContent = new StringContent(json, Encoding.UTF8, "application/json");
+            var requestMessage = new HttpRequestMessage(HttpMethod.Post, url);
+            requestMessage.Content = jsonContent;
+
+            requestMessage.Headers.Add("MT-Request-Token", Guid.NewGuid().ToString());
+
+            try
+            {
+                HttpResponseMessage response = await _client.SendAsync(requestMessage);
+                var apiResponse = new ApiResponse
+                {
+                    StatusCode = response.StatusCode,
+                    IsSuccess = response.IsSuccessStatusCode
+                };
+
+                if (response.IsSuccessStatusCode)
+                {
+                    apiResponse.Content = await response.Content.ReadAsStringAsync();
+                }
+                else
+                {
+                    apiResponse.ErrorMessage = await response.Content.ReadAsStringAsync();
+                }
+
+                return apiResponse;
+
+
+            }
+            catch (HttpRequestException e)
+            {
+
+                Console.WriteLine($"Error: {e.Message}");
+                return null;
+            }
+        }
     }
 
 
@@ -179,6 +275,7 @@ namespace ACECommerce
     {
         public string ApiKey { get; set; }
         public string URL { get; set; }
+        public string ConnectionId { get; set; }
     }
     public class DatabaseSettings
     {
@@ -210,7 +307,8 @@ namespace ACECommerce
         public bool OverrideTranDate { get; set; }
         public DateTime OverrideTranDateValue { get; set; }
         public string ConfirmationTrimInterval { get; set; }
-        public bool ProcessTableOnly { get; set; }
+        public bool ProcessOrdersTableOnly { get; set; }
+        public bool ProcessTicketsTableOnly { get; set; }
         public bool TransactionIdOverride { get; set; }
         public string TransactionList { get; set; }
     }
@@ -324,7 +422,8 @@ namespace ACECommerce
                 WriteConsoleMessage($"OverrideTranDate={loggingSettings.OverrideTranDate}", databaseSettings.MT_EMLConnectionString);
                 WriteConsoleMessage($"OverrideTranDateValue={loggingSettings.OverrideTranDateValue}", databaseSettings.MT_EMLConnectionString);
                 WriteConsoleMessage($"ConfirmationTrimInterval={loggingSettings.ConfirmationTrimInterval}", databaseSettings.MT_EMLConnectionString);
-                WriteConsoleMessage($"ProcessTableOnly={loggingSettings.ProcessTableOnly}", databaseSettings.MT_EMLConnectionString);
+                WriteConsoleMessage($"ProcessOracleTableOnly={loggingSettings.ProcessOrdersTableOnly}", databaseSettings.MT_EMLConnectionString);
+                WriteConsoleMessage($"ProcessTicketsTableOnly={loggingSettings.ProcessTicketsTableOnly}", databaseSettings.MT_EMLConnectionString);
                 WriteConsoleMessage($"TransactionIdOverride={loggingSettings.TransactionIdOverride}", databaseSettings.MT_EMLConnectionString);
                 WriteConsoleMessage($"TransactionList={loggingSettings.TransactionList}", databaseSettings.MT_EMLConnectionString);
             }
@@ -391,7 +490,14 @@ namespace ACECommerce
                                                     t.TRANSACTION_ID, 
                                                     t.TICKET_ID";
 
-                string queryOrdersSelectString = @"SELECT MAX(a.TRANSACTION_ID) as MAX_TRANSACTION_ID,  MAX(a.LAST_UPDATED_DATE) as LAST_UPDATED_DATE, b.ORDER_ID, d.EMAIL,   
+                // TODO: query below needs to be expanded for all API order fields
+                string queryTicketOrders = @"select t.order_id, o.order_email, o.Attending_Patron_Account_id
+                                            from tbl_MKTECommTicketDetail t
+                                            inner join tbl_MKTECommOrderInfo o on t.order_id = o.order_id
+                                            group by t.order_id, o.order_email, o.Attending_Patron_Account_id";
+
+                string queryOrdersSelectString = @"SELECT MAX(a.TRANSACTION_ID) as MAX_TRANSACTION_ID,  MAX(a.LAST_UPDATED_DATE) as LAST_UPDATED_DATE, b.ORDER_ID, d.EMAIL, 
+                                                            d.ATTENDING_PATRON_ACCOUNT_ID,  
                                                             dm.DELIVERY_METHOD_CODE, o.SUPPLIER_ID, 'N' as CELEBRATING, 
                                                             MAX(CASE WHEN p.PRICE_SCALE_CODE <> 'NONADM' THEN CONCAT(p.PUBLIC_DESCRIPTION, CASE WHEN p.PUBLIC_DESCRIPTION <> 'General Admission' THEN ' Upgrade' ELSE '' END)  ELSE NULL END) AS PACKAGE_TYPE,
                                                             SUM(CASE WHEN (bt.DESCRIPTION NOT LIKE ('%Child%') AND p.PRICE_SCALE_CODE <> 'NONADM') THEN 1 ELSE 0 END) AS ADULT_TICKETS,
@@ -449,7 +555,7 @@ namespace ACECommerce
                                                 AND			d.DELIVERY_STATUS_CODE <> 'C'   
                                                 INNER JOIN	(SELECT * FROM delivery_method WHERE DELIVERY_TYPE_CODE = 'ETH') dm   
                                                 ON			dm.DELIVERY_METHOD_ID = d.DELIVERY_METHOD_ID   
-                                                GROUP BY    b.ORDER_ID, o.SUPPLIER_ID, d.EMAIL, dm.DELIVERY_METHOD_CODE, -- p.PRICE_SCALE_CODE, 
+                                                GROUP BY    b.ORDER_ID, o.SUPPLIER_ID, d.EMAIL, d.ATTENDING_PATRON_ACCOUNT_ID, dm.DELIVERY_METHOD_CODE, -- p.PRICE_SCALE_CODE, 
                                                             CASE WHEN ac.ACCOUNT_TYPE_CODE = 'IND' THEN 'IND' ELSE act.PATRON_ACCOUNT_TYPE_CODE END, 
                                                             o.ORDER_DATE,
                                                             e.EVENT_DATE,
@@ -458,7 +564,8 @@ namespace ACECommerce
 
                
 
-                string queryOrdersSelectWithOverrideString = @"SELECT MAX(a.TRANSACTION_ID) as MAX_TRANSACTION_ID, MAX(a.LAST_UPDATED_DATE) as LAST_UPDATED_DATE, b.ORDER_ID, d.EMAIL,   
+                string queryOrdersSelectWithOverrideString = @"SELECT MAX(a.TRANSACTION_ID) as MAX_TRANSACTION_ID, MAX(a.LAST_UPDATED_DATE) as LAST_UPDATED_DATE, b.ORDER_ID, d.EMAIL,  
+                                                            d.ATTENDING_PATRON_ACCOUNT_ID, 
                                                             dm.DELIVERY_METHOD_CODE, o.SUPPLIER_ID, 'N' as CELEBRATING, MAX(CASE WHEN p.PRICE_SCALE_CODE <> 'NONADM' THEN CONCAT(p.PUBLIC_DESCRIPTION,CASE WHEN p.PUBLIC_DESCRIPTION <> 'General Admission' THEN ' Upgrade' ELSE '' END)  ELSE NULL END) AS PACKAGE_TYPE,
                                                             SUM(CASE WHEN (bt.DESCRIPTION NOT LIKE ('%Child%') AND p.PRICE_SCALE_CODE <> 'NONADM') THEN 1 ELSE 0 END) AS ADULT_TICKETS,
                                                             SUM(CASE WHEN (bt.DESCRIPTION LIKE ('%Child%') AND p.PRICE_SCALE_CODE <> 'NONADM')THEN 1 ELSE 0 END) AS CHILD_TICKETS,
@@ -504,7 +611,7 @@ namespace ACECommerce
                                                 AND			d.DELIVERY_STATUS_CODE <> 'C'   
                                                 INNER JOIN	(SELECT * FROM delivery_method WHERE DELIVERY_TYPE_CODE = 'ETH') dm   
                                                 ON			dm.DELIVERY_METHOD_ID = d.DELIVERY_METHOD_ID   
-                                                GROUP BY    b.ORDER_ID, o.SUPPLIER_ID, d.EMAIL, dm.DELIVERY_METHOD_CODE, -- p.PRICE_SCALE_CODE, 
+                                                GROUP BY    b.ORDER_ID, o.SUPPLIER_ID, d.EMAIL, d.ATTENDING_PATRON_ACCOUNT_ID, dm.DELIVERY_METHOD_CODE, -- p.PRICE_SCALE_CODE, 
                                                             CASE WHEN ac.ACCOUNT_TYPE_CODE = 'IND' THEN 'IND' ELSE act.PATRON_ACCOUNT_TYPE_CODE END, 
                                                             o.ORDER_DATE,
                                                             e.EVENT_DATE,
@@ -524,7 +631,10 @@ namespace ACECommerce
                                                     FROM  mt_eml.tbl_MKTECommOrderInfo
                                                     WHERE Order_Update_Status = 'P' AND AC_Exists = 'Y' AND TRIM(IFNULL(AC_Active_List,'')) <> ''";
 
-                string queryOrdersInsertString = "INSERT INTO tbl_MKTECommOrderInfo(TransactionId,Last_Updated_Dtm,Order_Id,Order_Email,Delivery_Type,SUPPLIER_ID,Celebrating,Adult_Tickets,Child_Tickets,Tickets_Value,Coupon,Package_Type,Package_Value,Upsells_Value,Upsells_Data,Order_Date,Event_Date,Guest_Type,Event_Type,Agency) SELECT <VALUES>";
+                string queryOrdersInsertString = "INSERT INTO tbl_MKTECommOrderInfo(TransactionId,Last_Updated_Dtm,Order_Id,Order_Email,Delivery_Type,SUPPLIER_ID,Celebrating,Adult_Tickets,Child_Tickets,Tickets_Value,Coupon,Package_Type,Package_Value,Upsells_Value,Upsells_Data,Order_Date,Event_Date,Guest_Type,Event_Type,Agency,Attending_Patron_Account_Id) SELECT <VALUES>";
+
+                string queryTicketsInsertString = "INSERT INTO tbl_MKTECommTicketDetail(TRANSACTION_ID, EVENT_ID, EVENT_CODE, EVENT_DATE_TIME, SUPPLIER_ID, PATRON_ACCOUNT_ID, ORDER_ID, PRICE_SCALE, BUYER_TYPE_CODE, BUYER_TYPE_DESC, BUYER_TYPE_GROUP_ID, REPORT_BUYER_TYPE_GROUP_ID, DISPLAY_INDICATOR, TAX_EXEMPT, TICKET_ID, PAYMENT_STATUS_CODE, TICKET_PRICE, CONV_FEE, SALES_TAX, GRATUITY, ALLOCATION, INC_SALES_TAX, TICKET_COUNT) SELECT <VALUES>";
+
 
                 string queryUpdateOrdersToSkip = "UPDATE mt_eml.tbl_MKTECommOrderInfo SET Order_Update_Status = 'X' WHERE Order_Update_Status = 'P'; " +
                                                  "UPDATE mt_eml.tbl_MKTECommOrderInfo SET Order_Update_Status = 'S' WHERE Order_Update_Status = 'N' AND SUPPLIER_ID NOT IN " +
@@ -551,9 +661,9 @@ namespace ACECommerce
                     {
                         if (loggingSettings.Debug) WriteConsoleMessage("Opening connection to EML", databaseSettings.MT_EMLConnectionString);
                         emlConnection.Open();
-
-                        MySqlCommand cmdRecordsMaintenance = new MySqlCommand(queryRecordsMaintenanceString.Replace("<ConfirmationTrimInterval>", loggingSettings.ConfirmationTrimInterval), emlConnection);
-                        cmdRecordsMaintenance.ExecuteNonQuery();
+// TODO: PUT THIS BACK AT SOME POINT BUT FIX IT SO IT DOESN'T JUST TRUNCATE THE TICKET TABLE!
+                        // MySqlCommand cmdRecordsMaintenance = new MySqlCommand(queryRecordsMaintenanceString.Replace("<ConfirmationTrimInterval>", loggingSettings.ConfirmationTrimInterval), emlConnection);
+                        // cmdRecordsMaintenance.ExecuteNonQuery();
 
                         string maxLast_Updated_DtmString = string.Empty;
 
@@ -574,7 +684,7 @@ namespace ACECommerce
                             maxLast_Updated_DtmString = loggingSettings.OverrideTranDateValue.ToString("MM/dd/yyyy hh:mm:ss tt");
                         }
 
-                        if (!loggingSettings.ProcessTableOnly)
+                        if (!loggingSettings.ProcessOrdersTableOnly)
                         {
                             using (OracleConnection pvConnection = new OracleConnection(databaseSettings.PVConnectionString))
                             {
@@ -586,8 +696,6 @@ namespace ACECommerce
                                     int totalRowcount = 0;
                                     string ordersString = string.Empty;
 
-                                    // if (!loggingSettings.ProcessTableOnly)
-                                    // {
                                     if (loggingSettings.Debug) WriteConsoleMessage("Executing orders query in PV for ActiveCampaign updates", databaseSettings.MT_EMLConnectionString);
 
 
@@ -635,7 +743,8 @@ namespace ACECommerce
                                                 "STR_TO_DATE('" + (r["EVENT_DATE"]) + "', '%m/%d/%Y %h:%i:%s %p'), " +
                                                 "'" + r["GUEST_TYPE"] + "', " +
                                                 "'" + r["EVENT_TYPE"] + "', " +
-                                                "'" + r["Agency"] + "'";
+                                                "'" + r["Agency"] + "'," + 
+                                                r["ATTENDING_PATRON_ACCOUNT_ID"];
 
                                             cmdInsertOrder.CommandText = queryOrdersInsertString.Replace("<VALUES>", orderValuesString);
                                             cmdInsertOrder.ExecuteNonQuery();
@@ -777,216 +886,210 @@ namespace ACECommerce
                         // X = was a P but didn't get processed
                         // S = Skipped
                         // E = error 
+                        if (!loggingSettings.ProcessTicketsTableOnly)
+                        {
+                            // get order id list
+                            MySqlDataAdapter daOrderIdList = new MySqlDataAdapter(queryOrderIdsListString, emlConnection);
+                            DataSet dsOrderIdList = new DataSet();
+                            daOrderIdList.Fill(dsOrderIdList);
 
-                        // get order id list
-                        MySqlDataAdapter daOrderIdList = new MySqlDataAdapter(queryOrderIdsListString, emlConnection);
-                        DataSet dsOrderIdList = new DataSet();
-                        daOrderIdList.Fill(dsOrderIdList);
+                            // turn dataset above into comma-separated list of order id's with single quotes
+                            string orderIdListString = string.Join(",",
+                                dsOrderIdList.Tables[0].AsEnumerable()
+                                .Select(row => $"'{row[0].ToString()}'")
+                            );
 
-                        // turn dataset above into comma-separated list of order id's with single quotes
-                        string orderIdListString = string.Join(",",
-                            dsOrderIdList.Tables[0].AsEnumerable()
-                            .Select(row => $"'{row[0].ToString()}'")
-                        );
+                            queryTicketsSelectString = queryTicketsSelectString.Replace("<Order_Id_List>", orderIdListString);
 
-                        queryTicketsSelectString = queryTicketsSelectString.Replace("<Order_Id_List>", orderIdListString);
-
-                        WriteConsoleMessage("Skipping old update logic, now commented out", databaseSettings.MT_EMLConnectionString);
-                        // try
-                        // {
-
-                        //     GuestTypeOptions guestOptionsContainer = new();
-                        //     root.GetSection(nameof(GuestTypeOptions))
-                        //         .Bind(guestOptionsContainer);
-
-                        //     List<Option> guestTypeOptions = guestOptionsContainer.Options;
-
-                        //     Dictionary<string, string> guestTypeOptionsDictionary = guestTypeOptions.ToDictionary(opt => opt.Id, opt => opt.Value);
-
-                        //     AgencyOptions agencyOptionsContainer = new();
-                        //     root.GetSection(nameof(AgencyOptions))
-                        //         .Bind(agencyOptionsContainer);
-
-                        //     List<Option> agencyOptions = agencyOptionsContainer.Options;
-
-                        //     Dictionary<string, string> agencyOptionsDictionary = agencyOptions.ToDictionary(opt => opt.Id, opt => opt.Value);
-
-                        //     if (loggingSettings.Debug) WriteConsoleMessage("Getting accounts and orders to update in ActiveCampaign", databaseSettings.MT_EMLConnectionString);
-
-                                // MySqlDataAdapter daOrdersToUpdate = new MySqlDataAdapter(queryAccountsToUpdateString, emlConnection);
-                                // DataSet dsOrdersToUpdate = new DataSet();
-                                // daOrdersToUpdate.Fill(dsOrdersToUpdate);
-
-                        //     var apiClient = new APIClient(acAPISettings.ApiKey);
-                        //     string url = acAPISettings.URL;
-
-                        //     foreach (DataRow r in dsOrdersToUpdate.Tables[0].Rows)
-                        //     {
-                        //         string currentTransactionId = r["TransactionId"].ToString();
-                        //         int currentContactId = int.Parse(r["AC_ID"].ToString());
-                        //         var matchedGuestType = guestTypeOptionsDictionary.FirstOrDefault(kvp => kvp.Value.StartsWith(r["Guest_Type"].ToString()));
-
-                        //         var matchedAgency = agencyOptionsDictionary.FirstOrDefault(kvp => kvp.Value.StartsWith(r["Agency"].ToString()));
-                        //         string agencyValue = matchedAgency.Value != null ? r["Agency"].ToString() : "";
-
-                        //         List<CustomFieldUpdater> fieldsToUpdate = new List<CustomFieldUpdater>();
-
-                        //         /*   
-                        //             This maps the fields in the custom object with the main contact fields
-                        //             The values match the fixed integers in AC that correspond with these fields
-                        //             If there is an item in the list below, it will get loaded fro the data and included in the update
-                        //         */
-                        //         Dictionary<string, int> fieldMappings = new Dictionary<string, int>
-                        //         {
-                        //             {"number-of-tickets-1", 39},
-                        //             {"tickets-adults-1", 40},
-                        //             {"tickets-children-1", 7},
-                        //             {"tickets-value-2", 8},
-                        //             {"coupon", 9},
-                        //             {"package-value-1", 10},
-                        //             {"package-type-1", 42},
-                        //             {"upsells-value-1", 12},
-                        //             {"order-date-1", 47},
-                        //             {"event-date-1", 41},
-                        //             {"castle-1", 46},
-                        //             {"event-type-1", 44},
-                        //             {"guest-type-2", 45}
-                        //         };
-
-                        //         decimal ticketValue = r["Tickets_Value"] != DBNull.Value ? (decimal)r["Tickets_Value"] : (decimal)0.00;
-                        //         decimal packageValue = r["Package_Value"] != DBNull.Value ? (decimal)r["Package_Value"] : (decimal)0.00;
-                        //         string formattedOrderDate = ((DateTime)r["Order_Date"]).AddHours(5).ToString("yyyy-MM-ddTHH:mm:ss.fffffffZ");//adjust 5 for UTC
-                        //         string formattedEventDate = ((DateTime)r["Event_Date"]).AddHours(5).ToString("yyyy-MM-ddTHH:mm:ss.fffffffZ");
-
-                        //         if (packageValue < ticketValue) ticketValue -= packageValue;
-
-                        //         var fields = new List<Field>
-                        //             {
-                        //                 new Field { Id = "order-id", Value = r["Order_Id"] },
-                        //                 new Field { Id = "castle-1", Value = r["Castle"].ToString() },
-                        //                 new Field { Id = "celebrating-1", Value = "No" },
-                        //                 new Field { Id = "number-of-tickets-1", Value = r["Number_Of_Tickets"] },
-                        //                 new Field { Id = "tickets-adults-1", Value = r["Adult_Tickets"] },
-                        //                 new Field { Id = "tickets-children-1", Value = r["Child_Tickets"] },
-                        //                 new Field { Id = "tickets-value-2", Value = ticketValue },
-                        //                 new Field { Id = "coupon", Value = r["coupon"] != DBNull.Value ? r["coupon"].ToString() : "" },
-                        //                 new Field { Id = "package-value-1", Value = packageValue },
-                        //                 new Field { Id = "package-type-1", Value = r["Package_Type"] != DBNull.Value ? r["Package_Type"].ToString().Replace("Queens", "Queen's") : "" },
-                        //                 new Field { Id = "upsells-value-1", Value = r["Upsells_Value"] != DBNull.Value ? r["Upsells_Value"] : 0.00 },
-                        //                 new Field { Id = "upsells-data-2", Value = r["Upsells_Data"].ToString() },
-                        //                 new Field { Id = "order-date-1", Value = r["Order_Date"] != DBNull.Value ? ((DateTime)r["Order_Date"]).ToString("yyyy-MM-dd") : "" },
-                        //                 new Field { Id = "event-date-1", Value = r["Event_Date"] != DBNull.Value ? ((DateTime)r["Event_Date"]).ToString("yyyy-MM-dd") : "" },
-                        //                 new Field { Id = "guest-type-2", Value = matchedGuestType.Value },
-                        //                 new Field { Id = "event-type-1", Value = r["Event_Type"].ToString() }
-                        //             };
-
-                        //         if (!string.IsNullOrWhiteSpace(agencyValue))
-                        //         {
-                        //             fields.Add(new Field { Id = "agency", Value = agencyValue });
-                        //         }
-
-                        //         var purchaseObject = new RootPurchaseObject
-                        //         {
-                        //             Record = new Record
-                        //             {
-                        //                 Id = "",
-                        //                 ExternalId = r["Order_Id"].ToString(),
-                        //                 Fields = fields,
-                        //                 Relationships = new Relationships
-                        //                 {
-                        //                     PrimaryContact = new List<int> { currentContactId }
-                        //                 }
-                        //             }
-                        //         };
-
-                        //         foreach (var mapping in fieldMappings)
-                        //         {
-                        //             var field = purchaseObject.Record.Fields.FirstOrDefault(f => f.Id == mapping.Key);
-                        //             if (field != null)
-                        //             {
-
-                        //                 string valueToAssign = field.Value.ToString();  // Default assignment
-
-                        //                 switch (mapping.Value)
-                        //                 {
-                        //                     case 41: 
-                        //                         valueToAssign = formattedEventDate;
-                        //                         break;
-                        //                     case 47:
-                        //                         valueToAssign = formattedOrderDate;
-                        //                         break;
-                        //                 }
-
-                        //                 fieldsToUpdate.Add(new CustomFieldUpdater
-                        //                 {
-                        //                     FieldValue = new CustomFieldUpdater.FieldValueDetails
-                        //                     {
-                        //                         Contact = currentContactId,
-                        //                         CustomFieldId = mapping.Value,
-                        //                         Value = valueToAssign
-                        //                     }
-                        //                 });
-                        //             }
-                        //         }
+                            using (OracleConnection pvConnection = new OracleConnection(databaseSettings.PVConnectionString))
+                            {
 
 
+                                try
+                                {
 
-                        //         string json = JsonSerializer.Serialize(purchaseObject, new JsonSerializerOptions { WriteIndented = true, Converters = { new FieldConverter() } });
+                                    if (loggingSettings.Debug) WriteConsoleMessage("Executing tickets query in PV for ActiveCampaign updates", databaseSettings.MT_EMLConnectionString);
 
-                        //         if (!loggingSettings.DryRun)
-                        //         {
-                        //             try
-                        //             {
-                        //                 ApiResponse response = await apiClient.PostRecordAsync(url, json, "customObjects/records/ba0dfc28-ba3c-46bc-b947-253730e62765");
 
-                        //                 if (response.IsSuccess)
-                        //                 {
-                        //                     MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "Y").Replace("<Response_Object>", response.Content.Replace("Queen's", "Queens")).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
-                        //                     daOrderUpdateData.ExecuteNonQuery();
-                        //                     WriteConsoleMessage($"Writing contact fields for {currentContactId}", databaseSettings.MT_EMLConnectionString);
-                        //                     //loop through the individual custom fields
+                                    OracleDataAdapter daTickets = new OracleDataAdapter(
+                                        //loggingSettings.TransactionIdOverride ? queryOrdersSelectWithOverrideString.Replace("<TRANSACTIONLIST>", loggingSettings.TransactionList) :
+                                        queryTicketsSelectString.Replace("<Order_Id_List>", orderIdListString),
+                                            pvConnection);
 
-                        //                     foreach (var field in fieldsToUpdate)
-                        //                     {
-                        //                         try
-                        //                         {
-                        //                             string jsonField = JsonSerializer.Serialize(field, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-                        //                             ApiResponse responseField = await apiClient.PostRecordAsync(url, jsonField, "fieldValues");
-                        //                             WriteConsoleMessage($"Successfully wrote contact field: {jsonField}", databaseSettings.MT_EMLConnectionString);
-                        //                         }
-                        //                         catch
-                        //                         {
-                        //                             WriteConsoleMessage($"Error writing contact field for contact: {currentContactId}", databaseSettings.MT_EMLConnectionString);
-                        //                         }
-                        //                     }
-                        //                 }
-                        //                 else
-                        //                 {
-                        //                     MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "E").Replace("<Response_Object>", response.ErrorMessage).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
-                        //                     daOrderUpdateData.ExecuteNonQuery();
-                        //                 }
+                                    DataSet dsTickets = new DataSet();
+                                    daTickets.SelectCommand.CommandTimeout = 600;
+                                    daTickets.Fill(dsTickets);
 
-                        //             }
-                        //             catch (Exception ex)
-                        //             {
+                                    MySqlCommand cmdInsertTicket = new MySqlCommand();
+                                    cmdInsertTicket.Connection = emlConnection;
+                                    string ticketValuesString = string.Empty;
 
-                        //                 MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "E").Replace("<Response_Object>", "Error during update, no json available, see logs").Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
-                        //                 daOrderUpdateData.ExecuteNonQuery();
+                                    if (loggingSettings.Debug) WriteConsoleMessage("Inserting tickets into tbl_MKTECommTicketDetail", databaseSettings.MT_EMLConnectionString);
+                                    foreach (DataRow r in dsTickets.Tables[0].Rows)
+                                    {
+                                        // bring this back after insert!
+                                        // MySqlDataAdapter daVerifyOrder = new MySqlDataAdapter(queryOrdersVerifyString.Replace("<VALUE>", r["MAX_TRANSACTION_ID"].ToString()).Replace("<Last_Updated_Dtm>", r["LAST_UPDATED_DATE"].ToString()), emlConnection);
+                                        // DataSet dsVerifyOrder = new DataSet();
+                                        // daVerifyOrder.Fill(dsVerifyOrder);
+                                        // DataRow r2 = dsVerifyOrder.Tables[0].Rows[0];
+                                        // if (0 == int.Parse(r2["PreviousOrderCount"].ToString()))
+                                        // {
+                                        if (loggingSettings.Debug) WriteConsoleMessage("Inserting TransactionId to TicketDetails " + r["TRANSACTION_ID"].ToString(), databaseSettings.MT_EMLConnectionString);
 
-                        //             }
+                                        ticketValuesString =
+                                            r["TRANSACTION_ID"] + ", " +
+                                            r["EVENT_ID"] + ", " +
+                                            "'" + r["EVENT_CODE"] + "', " +
+                                            "STR_TO_DATE('" + (r["EVENT_DATE_TIME"]) + "', '%m/%d/%Y %h:%i:%s %p'), " +
+                                            r["Supplier_Id"] + ", " +
+                                            r["PATRON_ACCOUNT_ID"] + ", " +
+                                            r["ORDER_ID"] + ", " +
+                                            "'" + r["PRICE_SCALE"] + "', " +
+                                            "'" + r["BUYER_TYPE_CODE"] + "', " +
+                                            "'" + r["BUYER_TYPE_DESC"].ToString().Replace("'", "''") + "', " +
+                                            r["BUYER_TYPE_GROUP_ID"] + ", " +
+                                            (Convert.IsDBNull(r["REPORT_BUYER_TYPE_GROUP_ID"]) ? "0" : r["REPORT_BUYER_TYPE_GROUP_ID"].ToString()) + "," +
+                                            "'" + r["DISPLAY_INDICATOR"] + "', " +
+                                            r["TAX_EXEMPT"] + ", " +
+                                            r["TICKET_ID"] + ", " +
+                                            "'" + r["PAYMENT_STATUS_CODE"] + "', " +
+                                            r["TICKET_PRICE"] + ", " +
+                                            r["CONV_FEE"] + ", " +
+                                            r["SALES_TAX"] + ", " +
+                                            r["INC_SALES_TAX"] + ", " +
+                                            r["GRATUITY"] + ", " +
+                                            r["ALLOCATION"] + ", " +
+                                            r["TICKET_COUNT"];
 
-                        //         }
+                                        cmdInsertTicket.CommandText = queryTicketsInsertString.Replace("<VALUES>", ticketValuesString);
+                                        // temp log every query to find other null problem
+                                        //if (loggingSettings.Debug) WriteConsoleMessage(cmdInsertTicket.CommandText);
 
-                        //     }
-                        // }
-                        // catch (Exception ex)
-                        // {
-                        //     WriteConsoleMessage(ex.Message, databaseSettings.MT_EMLConnectionString);
-                        // }
+                                        cmdInsertTicket.ExecuteNonQuery();
+                                        // }
+                                        // else
+                                        // {
+                                        //     if (loggingSettings.Debug) WriteConsoleMessage($"Skipping TransactionId {r["MAX_TRANSACTION_ID"].ToString()} because it was already processed", databaseSettings.MT_EMLConnectionString);
+                                        // }
+                                    }
+                                    if (loggingSettings.Debug) WriteConsoleMessage("Finished inserting tickets into tbl_MKTECommTicketDetail", databaseSettings.MT_EMLConnectionString);
+
+                                    // if (loggingSettings.Debug) WriteConsoleMessage("Update orders to skip if location not active", databaseSettings.MT_EMLConnectionString);
+                                    // MySqlCommand cmdUpdateOrdersToSkip = new MySqlCommand(queryUpdateOrdersToSkip, emlConnection);
+                                    // cmdUpdateOrdersToSkip.ExecuteNonQuery();
+                                }
+                                catch (Exception ex)
+                                {
+                                    WriteConsoleMessage(ex.Message, databaseSettings.MT_EMLConnectionString);
+                                }
+                            }
+                        }
+                        else
+                        {
+                            if (loggingSettings.Debug) WriteConsoleMessage("Skipped getting Tickets for Orders due to runtime settings.  Check appSettings.json if this is unintended.", databaseSettings.MT_EMLConnectionString);
+                        }
+
+                        // build customer and order info for EComm API
+                        MySqlDataAdapter daApiOrderList = new MySqlDataAdapter(queryTicketOrders, emlConnection);
+                        DataSet dsApiOrderList = new DataSet();
+                        daApiOrderList.Fill(dsApiOrderList);
+
+                        foreach (DataRow r in dsApiOrderList.Tables[0].Rows)
+                        {
+                            try
+                            {
+                                var apiClient = new APIClient(acAPISettings.ApiKey);
+                                string url = acAPISettings.URL;
+
+                                if (loggingSettings.Debug) WriteConsoleMessage($"Checking existence of {r["Order_Email"].ToString()} as an Ecomm Customer", databaseSettings.MT_EMLConnectionString);
+
+                                string emailAddress = r["Order_Email"].ToString();
+                                string externalId = r["Attending_Patron_Account_id"].ToString();
+                                string connectionId = acAPISettings.ConnectionId;
+
+                                try
+                                {
+                                    ApiResponse response = await apiClient.GetCustomerAsync(url, connectionId, emailAddress);
+                                    var customerExists = false;
+                                    if (response.IsSuccess)
+                                    {
+                                        // Success doesn't mean they exist, have to check array
+                                        using JsonDocument doc = JsonDocument.Parse(response.Content);
+
+                                        JsonElement customersElement = doc.RootElement.GetProperty("ecomCustomers");
+                                        if (customersElement.ValueKind == JsonValueKind.Array && customersElement.GetArrayLength() != 0)
+                                        {
+                                            customerExists = true;
+                                        }
+                                    }
+                                    else
+                                    {
+                                        // todo: handle failure
+                                    }
+                                    if (!customerExists)
+                                    {
+                                        // add customer 
+                                        var wrapper = new EcomCustomerWrapper
+                                        {
+                                            Customer = new EcomCustomer
+                                            {
+                                                ConnectionId = connectionId,
+                                                ExternalId = externalId,
+                                                Email = emailAddress
+                                                // acceptsMarketing is already set to "1" by default
+                                            }
+                                        };
+
+                                        // serialize to JSON
+                                        var options = new JsonSerializerOptions { WriteIndented = true };
+                                        string json = JsonSerializer.Serialize(wrapper, options);
+
+                                        ApiResponse createResponse = await apiClient.PostCustomerAsync(url, json, "ecomCustomers"); // path is case sensitive
+                                        if (createResponse.IsSuccess)
+                                        {
+                                            //TODO: log it
+                                        }
+                                        else
+                                        {
+                                            // todo: handle failure
+                                            // Success doesn't mean they exist, have to check array
+                                            using JsonDocument doc = JsonDocument.Parse(createResponse.Content);
+
+                                        }
+
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    // todo: reinstate as ticket update
+                                    // try
+                                    // {
+                                    //     if (int.TryParse(currentTransactionId, out int id))
+                                    //     {
+                                    //         MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "E").Replace("<Response_Object>", ex.Message).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
+                                    //         daOrderUpdateData.ExecuteNonQuery();
+                                    //     }
+                                    // }
+                                    // catch (Exception ex2) { WriteConsoleMessage($"We ignored an error within a catch block.  {ex2.Message}", databaseSettings.MT_EMLConnectionString); }
+
+                                    if (loggingSettings.Debug) WriteConsoleMessage($"An error occured while processing Order ID {r["Order_Id"]} Email {r["Order_Email"]}  {ex.Message}", databaseSettings.MT_EMLConnectionString);
+                                    WriteConsoleMessage(ex.Message, databaseSettings.MT_EMLConnectionString);
+
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                if (loggingSettings.Debug) WriteConsoleMessage("An error occured while constructing outgoing request to check for Customer.  See next record if an exception message is available.", databaseSettings.MT_EMLConnectionString);
+                                WriteConsoleMessage(ex.Message, databaseSettings.MT_EMLConnectionString);
+                            }
+                        }
+                        
+
+
 
                         if (loggingSettings.Debug) WriteConsoleMessage("Completed calls to PV.  See previous lines for any errors that may have occurred.", databaseSettings.MT_EMLConnectionString);
-                        WriteConsoleMessage("Ending Service", databaseSettings.MT_EMLConnectionString);
-                    } // end try using (MySqlConnection emlConnection = new MySqlConnection(databaseSettings.MT_EMLConnectionString))
+                            WriteConsoleMessage("Ending Service", databaseSettings.MT_EMLConnectionString);
+                        } // end try using (MySqlConnection emlConnection = new MySqlConnection(databaseSettings.MT_EMLConnectionString))
                     catch (Exception ex)
                     {
                         WriteConsoleMessage(ex.Message, databaseSettings.MT_EMLConnectionString);
