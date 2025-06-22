@@ -99,6 +99,109 @@ namespace ACECommerce
         public string Content { get; set; }
         public string ErrorMessage { get; set; }
     }
+
+    public class EcomOrderWrapper
+    {
+        [JsonPropertyName("ecomOrder")]
+        public EcomOrder EcomOrder { get; set; }
+    }
+
+    public class EcomOrder
+    {
+        [JsonPropertyName("externalid")]
+        public string ExternalId { get; set; }
+
+        [JsonPropertyName("source")]
+        public string Source { get; set; }
+
+        [JsonPropertyName("email")]
+        public string Email { get; set; }
+
+        [JsonPropertyName("orderProducts")]
+        public List<OrderProduct> OrderProducts { get; set; }
+
+        [JsonPropertyName("orderDiscounts")]
+        public List<OrderDiscount> OrderDiscounts { get; set; }
+
+        [JsonPropertyName("orderUrl")]
+        public string OrderUrl { get; set; }
+
+        [JsonPropertyName("externalCreatedDate")]
+        public string ExternalCreatedDate { get; set; }
+
+        [JsonPropertyName("externalUpdatedDate")]
+        public string ExternalUpdatedDate { get; set; }
+
+        [JsonPropertyName("shippingMethod")]
+        public string ShippingMethod { get; set; }
+
+        [JsonPropertyName("totalPrice")]
+        public int TotalPrice { get; set; }
+
+        [JsonPropertyName("shippingAmount")]
+        public int ShippingAmount { get; set; }
+
+        [JsonPropertyName("taxAmount")]
+        public int TaxAmount { get; set; }
+
+        [JsonPropertyName("discountAmount")]
+        public int DiscountAmount { get; set; }
+
+        [JsonPropertyName("currency")]
+        public string Currency { get; set; }
+
+        [JsonPropertyName("orderNumber")]
+        public string OrderNumber { get; set; }
+
+        [JsonPropertyName("connectionid")]
+        public string ConnectionId { get; set; }
+
+        [JsonPropertyName("customerid")]
+        public string CustomerId { get; set; }
+    }
+
+    public class OrderProduct
+    {
+        [JsonPropertyName("externalid")]
+        public string ExternalId { get; set; }
+
+        [JsonPropertyName("name")]
+        public string Name { get; set; }
+
+        [JsonPropertyName("price")]
+        public int Price { get; set; }
+
+        [JsonPropertyName("quantity")]
+        public int Quantity { get; set; }
+
+        [JsonPropertyName("category")]
+        public string Category { get; set; }
+
+        [JsonPropertyName("sku")]
+        public string Sku { get; set; }
+
+        [JsonPropertyName("description")]
+        public string Description { get; set; }
+
+        [JsonPropertyName("imageUrl")]
+        public string ImageUrl { get; set; }
+
+        [JsonPropertyName("productUrl")]
+        public string ProductUrl { get; set; }
+    }
+
+    public class OrderDiscount
+    {
+        [JsonPropertyName("name")]
+        public string Name { get; set; }
+
+        [JsonPropertyName("type")]
+        public string Type { get; set; }
+
+        [JsonPropertyName("discountAmount")]
+        public int DiscountAmount { get; set; }
+    }
+
     public class APIClient
     {
         private readonly HttpClient _client;
@@ -223,7 +326,7 @@ namespace ACECommerce
             }
         }
 
-        public async Task<ApiResponse> PostCustomerAsync(string URL, string json, string path)
+        public async Task<ApiResponse> PostCustomerOrOrdersAsync(string URL, string json, string path)
         {
             var url = $"https://{URL}/{path}";
             var jsonContent = new StringContent(json, Encoding.UTF8, "application/json");
@@ -367,8 +470,14 @@ namespace ACECommerce
             using (MySqlConnection emlConnection = new MySqlConnection(mySQLconnectionString))
             {
                 emlConnection.Open();
-                MySqlCommand cmdWriteLog = new MySqlCommand("INSERT INTO tbl_MKTECommOrderInfoLog(LogData) VALUES ('" + msg + "')", emlConnection);
-                cmdWriteLog.ExecuteNonQuery();
+                // logic below corrects it so that msg values that contain single quotes still work
+                using (MySqlCommand cmdWriteLog = new MySqlCommand("INSERT INTO tbl_MKTECommOrderInfoLog(LogData) VALUES (@msg)", emlConnection))
+                {
+                    cmdWriteLog.Parameters.AddWithValue("@msg", msg);
+                    cmdWriteLog.ExecuteNonQuery();
+                }
+                // MySqlCommand cmdWriteLog = new MySqlCommand("INSERT INTO tbl_MKTECommOrderInfoLog(LogData) VALUES ('" + msg + "')", emlConnection);
+                // cmdWriteLog.ExecuteNonQuery();
             }
 
         }
@@ -490,11 +599,22 @@ namespace ACECommerce
                                                     t.TRANSACTION_ID, 
                                                     t.TICKET_ID";
 
-                // TODO: query below needs to be expanded for all API order fields
-                string queryTicketOrders = @"select t.order_id, o.order_email, o.Attending_Patron_Account_id
-                                            from tbl_MKTECommTicketDetail t
-                                            inner join tbl_MKTECommOrderInfo o on t.order_id = o.order_id
-                                            group by t.order_id, o.order_email, o.Attending_Patron_Account_id";
+                // first query to get orders header info
+                // only get orders that have tickets, max() is used on order columns because there should only be one order per grouping
+// TODO: having clause is just for testing
+                string queryTicketOrders = @"select t.order_id, o.order_email, o.Attending_Patron_Account_id, o.coupon, 
+                        max(o.Tickets_Value) as TicketsValue, sum(t.SALES_TAX) as SalesTax, max(o.Order_Date) as OrderDate, max(o.Insert_Dtm) as InsertDtm, max(o.order_updated_dtm) as OrderUpdatedDtm
+                        from tbl_MKTECommTicketDetail t
+                        inner join tbl_MKTECommOrderInfo o on t.order_id = o.order_id
+                        group by t.order_id, o.order_email, o.Attending_Patron_Account_id, o.coupon
+having count(distinct t.buyer_type_code) > 1";
+
+                // second query runs for each order to get product list
+                string queryTicketDetails = @"select t.buyer_type_code, t.buyer_type_desc, t.buyer_type_group_id,
+                        sum(t.ticket_count) as TicketCount, sum(t.ticket_price) as TicketPrice
+                        from tbl_MKTECommTicketDetail t
+                        where Order_Id = <Order_Id>
+                        group by t.buyer_type_code, t.buyer_type_desc, t.buyer_type_group_id";
 
                 string queryOrdersSelectString = @"SELECT MAX(a.TRANSACTION_ID) as MAX_TRANSACTION_ID,  MAX(a.LAST_UPDATED_DATE) as LAST_UPDATED_DATE, b.ORDER_ID, d.EMAIL, 
                                                             d.ATTENDING_PATRON_ACCOUNT_ID,  
@@ -886,6 +1006,9 @@ namespace ACECommerce
                         // X = was a P but didn't get processed
                         // S = Skipped
                         // E = error 
+
+                        // TODO: add/update similar statuses for ticketDetail table
+
                         if (!loggingSettings.ProcessTicketsTableOnly)
                         {
                             // get order id list
@@ -990,6 +1113,7 @@ namespace ACECommerce
                         }
 
                         // build customer and order info for EComm API
+                        // Order info has either 0 or 1 coupons - keep this together with header info
                         MySqlDataAdapter daApiOrderList = new MySqlDataAdapter(queryTicketOrders, emlConnection);
                         DataSet dsApiOrderList = new DataSet();
                         daApiOrderList.Fill(dsApiOrderList);
@@ -1003,14 +1127,20 @@ namespace ACECommerce
 
                                 if (loggingSettings.Debug) WriteConsoleMessage($"Checking existence of {r["Order_Email"].ToString()} as an Ecomm Customer", databaseSettings.MT_EMLConnectionString);
 
-                                string emailAddress = r["Order_Email"].ToString();
+                                string orderId = r["order_id"].ToString();
+                                string emailAddress = r["order_Email"].ToString();
                                 string externalId = r["Attending_Patron_Account_id"].ToString();
+                                string createdDate = r["OrderDate"] == DBNull.Value ? null : ((DateTime)r["OrderDate"]).ToString("yyyy-MM-ddTHH:mm:ss");
+                                string updatedDate = r["OrderUpdatedDtm"] == DBNull.Value ? null : ((DateTime)r["OrderUpdatedDtm"]).ToString("yyyy-MM-ddTHH:mm:ss");
+                                
                                 string connectionId = acAPISettings.ConnectionId;
+                                string customerId = "";
+                                bool customerExists = false;
 
                                 try
                                 {
                                     ApiResponse response = await apiClient.GetCustomerAsync(url, connectionId, emailAddress);
-                                    var customerExists = false;
+
                                     if (response.IsSuccess)
                                     {
                                         // Success doesn't mean they exist, have to check array
@@ -1020,12 +1150,19 @@ namespace ACECommerce
                                         if (customersElement.ValueKind == JsonValueKind.Array && customersElement.GetArrayLength() != 0)
                                         {
                                             customerExists = true;
+                                            JsonElement firstCustomer = customersElement[0]; // Or use EnumerateArray().First()
+                                            if (firstCustomer.TryGetProperty("id", out JsonElement idElement))
+                                            {
+                                                customerId = idElement.GetString();
+                                            }
                                         }
                                     }
                                     else
                                     {
                                         // todo: handle failure
                                     }
+
+                                    // create customer if it doesn't already exist
                                     if (!customerExists)
                                     {
                                         // add customer 
@@ -1044,10 +1181,23 @@ namespace ACECommerce
                                         var options = new JsonSerializerOptions { WriteIndented = true };
                                         string json = JsonSerializer.Serialize(wrapper, options);
 
-                                        ApiResponse createResponse = await apiClient.PostCustomerAsync(url, json, "ecomCustomers"); // path is case sensitive
+                                        ApiResponse createResponse = await apiClient.PostCustomerOrOrdersAsync(url, json, "ecomCustomers"); // path is case sensitive
                                         if (createResponse.IsSuccess)
                                         {
-                                            //TODO: log it
+                                            //TODO: log customer id created
+                                            // Parse the string into a JsonDocument
+                                            using JsonDocument doc = JsonDocument.Parse(createResponse.Content);
+
+                                            // Navigate to the "ecomCustomer" object
+                                            JsonElement custRoot = doc.RootElement;
+
+                                            if (custRoot.TryGetProperty("ecomCustomer", out JsonElement ecomCustomer))
+                                            {
+                                                if (ecomCustomer.TryGetProperty("id", out JsonElement idElement))
+                                                {
+                                                    customerId = idElement.GetString();
+                                                }
+                                            }
                                         }
                                         else
                                         {
@@ -1058,6 +1208,97 @@ namespace ACECommerce
                                         }
 
                                     }
+
+                                    // at this point we have a customerid (either from lookup or create)
+                                    // create the order header and coupon info
+
+                                    var orderDiscount = new OrderDiscount();
+                                    if (r["coupon"] != DBNull.Value && !String.IsNullOrEmpty(r["coupon"].ToString()))
+                                    {
+                                        orderDiscount.Name = r["coupon"].ToString();
+                                        orderDiscount.Type = "order";
+                                        orderDiscount.DiscountAmount = 0;
+                                    }
+                                    ;
+                                    var orderWrapper = new EcomOrderWrapper
+                                    {
+                                        EcomOrder = new EcomOrder
+                                        {
+                                            ExternalId = orderId,
+                                            Source = "1",
+                                            Email = emailAddress,
+                                            ConnectionId = connectionId,
+                                            CustomerId = customerId,
+                                            OrderNumber = orderId,
+                                            ExternalCreatedDate = createdDate,
+                                            ExternalUpdatedDate = updatedDate,
+                                            Currency = "USD",
+                                            TotalPrice = (int)((decimal)r["TicketsValue"] * 100),
+                                            ShippingAmount = 0,
+                                            TaxAmount = (int)((decimal)r["SalesTax"] * 100),
+                                            DiscountAmount = 0,
+                                            ShippingMethod = "",
+                                            OrderUrl = "",
+                                            OrderProducts = new List<OrderProduct>(),
+                                            OrderDiscounts = new List<OrderDiscount> {orderDiscount}
+                                        }
+                                    };
+
+                                    // Get tickets details for the order
+                                    // Each product on the order comes from ticket buyer_type_code
+                                    queryTicketDetails = queryTicketDetails.Replace("<Order_Id>", orderId);
+                                    MySqlDataAdapter daApiTicketList = new MySqlDataAdapter(queryTicketDetails, emlConnection);
+                                    DataSet dsApiTicketList = new DataSet();
+                                    daApiTicketList.Fill(dsApiTicketList);
+
+                                    foreach (DataRow t in dsApiTicketList.Tables[0].Rows)
+                                    {
+                                        var orderProduct = new OrderProduct
+                                        {
+                                            ExternalId = t["buyer_type_code"].ToString(),
+                                            Name = t["buyer_type_desc"].ToString(),
+                                            Price = (int)((decimal)t["TicketPrice"] * 100),
+                                            Quantity = (int)((decimal)t["TicketCount"]),
+                                            Category = t["buyer_type_group_id"].ToString(),
+                                            Sku = t["buyer_type_code"].ToString(),
+                                            Description = t["buyer_type_desc"].ToString(),
+                                            ImageUrl = "",
+                                            ProductUrl = ""
+                                        };
+                                        orderWrapper.EcomOrder.OrderProducts.Add(orderProduct);
+                                    }
+
+                                    // now post the order
+                                    // serialize to JSON
+                                    var orderOptions = new JsonSerializerOptions { WriteIndented = true };
+                                    string orderJson = JsonSerializer.Serialize(orderWrapper, orderOptions);
+
+                                    ApiResponse orderResponse = await apiClient.PostCustomerOrOrdersAsync(url, orderJson, "ecomOrders"); // path is case sensitive
+                                    if (orderResponse.IsSuccess)
+                                    {
+                                        //TODO: log order id created
+                                        // Parse the string into a JsonDocument
+                                        using JsonDocument doc = JsonDocument.Parse(orderResponse.Content);
+
+                                        // Navigate to the "ecomCustomer" object
+                                        JsonElement orderRoot = doc.RootElement;
+
+                                        if (orderRoot.TryGetProperty("ecomOrder", out JsonElement ecomOrder))
+                                        {
+                                            if (ecomOrder.TryGetProperty("id", out JsonElement idElement))
+                                            {
+                                                var newOrderId = idElement.GetString();
+                                            }
+                                        }
+                                    }
+                                    else
+                                    {
+                                        // todo: handle failure
+                                        // Success doesn't mean they exist, have to check array
+                                        using JsonDocument doc = JsonDocument.Parse(orderResponse.Content);
+
+                                    }
+                                    
                                 }
                                 catch (Exception ex)
                                 {
