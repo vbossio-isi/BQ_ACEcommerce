@@ -601,20 +601,19 @@ namespace ACECommerce
 
                 // first query to get orders header info
                 // only get orders that have tickets, max() is used on order columns because there should only be one order per grouping
-// TODO: having clause is just for testing
                 string queryTicketOrders = @"select t.order_id, o.order_email, o.Attending_Patron_Account_id, o.coupon, 
-                        max(o.Tickets_Value) as TicketsValue, sum(t.SALES_TAX) as SalesTax, max(o.Order_Date) as OrderDate, max(o.Insert_Dtm) as InsertDtm, max(o.order_updated_dtm) as OrderUpdatedDtm
+                        max(o.Tickets_Value) as TicketsValue, max(o.UpSells_Value) as UpSellsValue, sum(t.SALES_TAX) as SalesTax, max(o.Order_Date) as OrderDate, max(o.Insert_Dtm) as InsertDtm, max(o.order_updated_dtm) as OrderUpdatedDtm
                         from tbl_MKTECommTicketDetail t
                         inner join tbl_MKTECommOrderInfo o on t.order_id = o.order_id
-                        group by t.order_id, o.order_email, o.Attending_Patron_Account_id, o.coupon
-having count(distinct t.buyer_type_code) > 1";
+                        group by t.order_id, o.order_email, o.Attending_Patron_Account_id, o.coupon";
+//having t.order_id in (42761910,42761811,)";
 
                 // second query runs for each order to get product list
-                string queryTicketDetails = @"select t.buyer_type_code, t.buyer_type_desc, t.buyer_type_group_id,
-                        sum(t.ticket_count) as TicketCount, sum(t.ticket_price) as TicketPrice
+                string queryTicketDetails = @"select t.buyer_type_code, t.buyer_type_desc, t.buyer_type_group_id, t.ticket_price,
+                        SUM(t.ticket_count) as TicketCount, MAX(t.ticket_price) as TicketPrice
                         from tbl_MKTECommTicketDetail t
                         where Order_Id = <Order_Id>
-                        group by t.buyer_type_code, t.buyer_type_desc, t.buyer_type_group_id";
+                        group by t.buyer_type_code, t.buyer_type_desc, t.buyer_type_group_id, t.ticket_price";
 
                 string queryOrdersSelectString = @"SELECT MAX(a.TRANSACTION_ID) as MAX_TRANSACTION_ID,  MAX(a.LAST_UPDATED_DATE) as LAST_UPDATED_DATE, b.ORDER_ID, d.EMAIL, 
                                                             d.ATTENDING_PATRON_ACCOUNT_ID,  
@@ -1180,6 +1179,7 @@ having count(distinct t.buyer_type_code) > 1";
                                         // serialize to JSON
                                         var options = new JsonSerializerOptions { WriteIndented = true };
                                         string json = JsonSerializer.Serialize(wrapper, options);
+                                        // TODO: remove indent above and log json
 
                                         ApiResponse createResponse = await apiClient.PostCustomerOrOrdersAsync(url, json, "ecomCustomers"); // path is case sensitive
                                         if (createResponse.IsSuccess)
@@ -1210,46 +1210,16 @@ having count(distinct t.buyer_type_code) > 1";
                                     }
 
                                     // at this point we have a customerid (either from lookup or create)
-                                    // create the order header and coupon info
-
-                                    var orderDiscount = new OrderDiscount();
-                                    if (r["coupon"] != DBNull.Value && !String.IsNullOrEmpty(r["coupon"].ToString()))
-                                    {
-                                        orderDiscount.Name = r["coupon"].ToString();
-                                        orderDiscount.Type = "order";
-                                        orderDiscount.DiscountAmount = 0;
-                                    }
-                                    ;
-                                    var orderWrapper = new EcomOrderWrapper
-                                    {
-                                        EcomOrder = new EcomOrder
-                                        {
-                                            ExternalId = orderId,
-                                            Source = "1",
-                                            Email = emailAddress,
-                                            ConnectionId = connectionId,
-                                            CustomerId = customerId,
-                                            OrderNumber = orderId,
-                                            ExternalCreatedDate = createdDate,
-                                            ExternalUpdatedDate = updatedDate,
-                                            Currency = "USD",
-                                            TotalPrice = (int)((decimal)r["TicketsValue"] * 100),
-                                            ShippingAmount = 0,
-                                            TaxAmount = (int)((decimal)r["SalesTax"] * 100),
-                                            DiscountAmount = 0,
-                                            ShippingMethod = "",
-                                            OrderUrl = "",
-                                            OrderProducts = new List<OrderProduct>(),
-                                            OrderDiscounts = new List<OrderDiscount> {orderDiscount}
-                                        }
-                                    };
+                                    // create the order products, discount and header info
 
                                     // Get tickets details for the order
                                     // Each product on the order comes from ticket buyer_type_code
-                                    queryTicketDetails = queryTicketDetails.Replace("<Order_Id>", orderId);
-                                    MySqlDataAdapter daApiTicketList = new MySqlDataAdapter(queryTicketDetails, emlConnection);
+                                    var orderProducts = new List<OrderProduct>();
+                                    var orderTicketDetails = queryTicketDetails.Replace("<Order_Id>", orderId);
+                                    MySqlDataAdapter daApiTicketList = new MySqlDataAdapter(orderTicketDetails, emlConnection);
                                     DataSet dsApiTicketList = new DataSet();
                                     daApiTicketList.Fill(dsApiTicketList);
+
 
                                     foreach (DataRow t in dsApiTicketList.Tables[0].Rows)
                                     {
@@ -1265,18 +1235,57 @@ having count(distinct t.buyer_type_code) > 1";
                                             ImageUrl = "",
                                             ProductUrl = ""
                                         };
-                                        orderWrapper.EcomOrder.OrderProducts.Add(orderProduct);
+                                        orderProducts.Add(orderProduct);
                                     }
+
+                                    // get coupon details if present
+                                    var orderDiscounts = new List<OrderDiscount>();
+                                    if (r["coupon"] != DBNull.Value && !String.IsNullOrEmpty(r["coupon"].ToString()))
+                                    {
+                                        var orderDiscount = new OrderDiscount();
+                                        orderDiscount.Name = r["coupon"].ToString();
+                                        orderDiscount.Type = "order";
+                                        orderDiscount.DiscountAmount = 0;
+                                        orderDiscounts.Add(orderDiscount);
+                                    }
+                                    ;
+
+                                    var orderWrapper = new EcomOrderWrapper
+                                    {
+                                        EcomOrder = new EcomOrder
+                                        {
+                                            ExternalId = orderId,
+                                            Source = "1",
+                                            Email = emailAddress,
+                                            ConnectionId = connectionId,
+                                            CustomerId = customerId,
+                                            OrderNumber = orderId,
+                                            ExternalCreatedDate = createdDate,
+                                            ExternalUpdatedDate = updatedDate,
+                                            Currency = "USD",
+                                            TotalPrice = (int)(((decimal)r["TicketsValue"] + (decimal)r["UpSellsValue"] + (decimal)r["SalesTax"]) * 100),
+                                            ShippingAmount = 0,
+                                            TaxAmount = (int)((decimal)r["SalesTax"] * 100),
+                                            DiscountAmount = 0,
+                                            ShippingMethod = "",
+                                            OrderUrl = "",
+                                            OrderProducts = orderProducts,
+                                            OrderDiscounts = orderDiscounts
+                                        }
+                                    };
+
 
                                     // now post the order
                                     // serialize to JSON
-                                    var orderOptions = new JsonSerializerOptions { WriteIndented = true };
-                                    string orderJson = JsonSerializer.Serialize(orderWrapper, orderOptions);
+                                    //var orderOptions = new JsonSerializerOptions { WriteIndented = true };
+                                    //string orderJson = JsonSerializer.Serialize(orderWrapper, orderOptions);
+                                    string orderJson = JsonSerializer.Serialize(orderWrapper);
+
+                                    WriteConsoleMessage($"Posting Order JSON: {orderJson}", databaseSettings.MT_EMLConnectionString);
 
                                     ApiResponse orderResponse = await apiClient.PostCustomerOrOrdersAsync(url, orderJson, "ecomOrders"); // path is case sensitive
                                     if (orderResponse.IsSuccess)
                                     {
-                                        //TODO: log order id created
                                         // Parse the string into a JsonDocument
                                         using JsonDocument doc = JsonDocument.Parse(orderResponse.Content);
 
@@ -1288,14 +1297,23 @@ having count(distinct t.buyer_type_code) > 1";
                                             if (ecomOrder.TryGetProperty("id", out JsonElement idElement))
                                             {
                                                 var newOrderId = idElement.GetString();
+                                                WriteConsoleMessage($"Ecom order id {newOrderId} created with ExternalOrderId {orderId}", databaseSettings.MT_EMLConnectionString);
                                             }
+                                            else
+                                            {
+                                                WriteConsoleMessage($"Could not get id property from {orderResponse.Content}", databaseSettings.MT_EMLConnectionString);
+                                            }
+
+                                        }
+                                        else
+                                        {
+                                            WriteConsoleMessage($"Could not get ecomOrder property from {orderResponse.Content}", databaseSettings.MT_EMLConnectionString);
                                         }
                                     }
                                     else
                                     {
-                                        // todo: handle failure
-                                        // Success doesn't mean they exist, have to check array
-                                        using JsonDocument doc = JsonDocument.Parse(orderResponse.Content);
+                                        //using JsonDocument doc = JsonDocument.Parse(orderResponse.Content);
+                                        WriteConsoleMessage($"FAILED Order Post for ExternalOrderId: {orderId} Status: {orderResponse.StatusCode} ErrorMessage: {orderResponse.ErrorMessage}", databaseSettings.MT_EMLConnectionString);
 
                                     }
                                     
