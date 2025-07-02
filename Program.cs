@@ -112,7 +112,7 @@ namespace ACECommerce
         public string ExternalId { get; set; }
 
         [JsonPropertyName("source")]
-        public string Source { get; set; }
+        public string? Source { get; set; }
 
         [JsonPropertyName("email")]
         public string Email { get; set; }
@@ -127,7 +127,7 @@ namespace ACECommerce
         public string OrderUrl { get; set; }
 
         [JsonPropertyName("externalCreatedDate")]
-        public string ExternalCreatedDate { get; set; }
+        public string? ExternalCreatedDate { get; set; }
 
         [JsonPropertyName("externalUpdatedDate")]
         public string ExternalUpdatedDate { get; set; }
@@ -154,10 +154,10 @@ namespace ACECommerce
         public string OrderNumber { get; set; }
 
         [JsonPropertyName("connectionid")]
-        public string ConnectionId { get; set; }
+        public string? ConnectionId { get; set; }
 
         [JsonPropertyName("customerid")]
-        public string CustomerId { get; set; }
+        public string? CustomerId { get; set; }
     }
 
     public class OrderProduct
@@ -326,11 +326,86 @@ namespace ACECommerce
             }
         }
 
+        public async Task<ApiResponse> GetOrderAsync(string URL, string connectionId, string externalId)
+        {
+            string url = $"https://{URL}/ecomOrders?filters[connectionid]={connectionId}&filters[externalid]={Uri.EscapeDataString(externalId)}";
+
+            var requestMessage = new HttpRequestMessage(HttpMethod.Get, url);
+
+            requestMessage.Headers.Add("MT-Request-Token", Guid.NewGuid().ToString());
+
+            try
+            {
+                HttpResponseMessage response = await _client.SendAsync(requestMessage);
+                var apiResponse = new ApiResponse
+                {
+                    StatusCode = response.StatusCode,
+                    IsSuccess = response.IsSuccessStatusCode
+                };
+
+                if (response.IsSuccessStatusCode)
+                {
+                    apiResponse.Content = await response.Content.ReadAsStringAsync();
+                }
+                else
+                {
+                    apiResponse.ErrorMessage = await response.Content.ReadAsStringAsync();
+                }
+
+                return apiResponse;
+
+            }
+            catch (HttpRequestException e)
+            {
+                Console.WriteLine($"Error: {e.Message}");
+                return null;
+            }
+        }
+
         public async Task<ApiResponse> PostCustomerOrOrdersAsync(string URL, string json, string path)
         {
             var url = $"https://{URL}/{path}";
             var jsonContent = new StringContent(json, Encoding.UTF8, "application/json");
             var requestMessage = new HttpRequestMessage(HttpMethod.Post, url);
+            requestMessage.Content = jsonContent;
+
+            requestMessage.Headers.Add("MT-Request-Token", Guid.NewGuid().ToString());
+
+            try
+            {
+                HttpResponseMessage response = await _client.SendAsync(requestMessage);
+                var apiResponse = new ApiResponse
+                {
+                    StatusCode = response.StatusCode,
+                    IsSuccess = response.IsSuccessStatusCode
+                };
+
+                if (response.IsSuccessStatusCode)
+                {
+                    apiResponse.Content = await response.Content.ReadAsStringAsync();
+                }
+                else
+                {
+                    apiResponse.ErrorMessage = await response.Content.ReadAsStringAsync();
+                }
+
+                return apiResponse;
+
+
+            }
+            catch (HttpRequestException e)
+            {
+
+                Console.WriteLine($"Error: {e.Message}");
+                return null;
+            }
+        }
+
+        public async Task<ApiResponse> UpdateOrdersAsync(string URL, string json, string path, string existingOrderId)
+        {
+            var url = $"https://{URL}/{path}/{existingOrderId}";
+            var jsonContent = new StringContent(json, Encoding.UTF8, "application/json");
+            var requestMessage = new HttpRequestMessage(HttpMethod.Put, url);
             requestMessage.Content = jsonContent;
 
             requestMessage.Headers.Add("MT-Request-Token", Guid.NewGuid().ToString());
@@ -600,12 +675,15 @@ namespace ACECommerce
                                                     t.TICKET_ID";
 
                 // first query to get orders header info
+                // IMPORTANT: Use order table for order_id and transactionid, otherwise transactions get broken out differently
                 // only get orders that have tickets, max() is used on order columns because there should only be one order per grouping
-                string queryTicketOrders = @"select t.order_id, o.order_email, o.Attending_Patron_Account_id, o.coupon, 
-                        max(o.Tickets_Value) as TicketsValue, max(o.UpSells_Value) as UpSellsValue, sum(t.SALES_TAX) as SalesTax, max(o.Order_Date) as OrderDate, max(o.Insert_Dtm) as InsertDtm, max(o.order_updated_dtm) as OrderUpdatedDtm
+                string queryTicketOrders = @"select o.order_id, o.transactionid, o.order_email, o.Attending_Patron_Account_id, o.coupon, 
+                        max(o.Tickets_Value) as TicketsValue, max(o.UpSells_Value) as UpSellsValue, sum(t.SALES_TAX) as SalesTax, max(o.Order_Date) as OrderDate, max(o.Insert_Dtm) as InsertDtm, max(o.last_updated_dtm) as LastUpdatedDtm
                         from tbl_MKTECommTicketDetail t
                         inner join tbl_MKTECommOrderInfo o on t.order_id = o.order_id
-                        group by t.order_id, o.order_email, o.Attending_Patron_Account_id, o.coupon";
+                        where o.order_update_status = 'P'
+                        group by o.order_id, o.transactionid, o.order_email, o.Attending_Patron_Account_id, o.coupon
+                        order by o.order_id, o.transactionid, o.order_email, o.Attending_Patron_Account_id, o.coupon";
 //having t.order_id in (42761910,42761811,)";
 
                 // second query runs for each order to get product list
@@ -766,6 +844,8 @@ namespace ACECommerce
                                                     INNER JOIN tbl_EMLLocations b ON a.SUPPLIER_ID = b.SupplierId;";
 
                 string queryOrderUpdateString = "UPDATE tbl_MKTECommOrderInfo SET Order_Update_Status = '<Order_Update_Status>', Order_Updated_Dtm = CURRENT_TIMESTAMP, Response_Object = '<Response_Object>' WHERE TransactionId = <MaxTransactionId>";
+
+                string queryOrderUpdatePostTypeString = "UPDATE tbl_MKTECommOrderInfo SET Order_Post_Type = '<Order_Post_Type>', Order_Updated_Dtm = CURRENT_TIMESTAMP, Response_Object = '<Response_Object>' WHERE TransactionId = <MaxTransactionId>";
 
                 string queryOrderACDataString = "UPDATE tbl_MKTECommOrderInfo SET AC_Exists ='<AC_Exists>', AC_ID = <AC_ID>, AC_Active_List = '<AC_Active_List>' WHERE TransactionId = <MaxTransactionId>";
 
@@ -1000,11 +1080,14 @@ namespace ACECommerce
 
                         // at this point all order statuses have been applied:
                         // Order_Update_Status
-                        // P = Need to be processed
                         // N = Not touched yet
+                        // P = Need to be processed
+                        // Y = Processed successfully
+                        // Z = Order create returned success, but could not get order info from response
                         // X = was a P but didn't get processed
                         // S = Skipped
                         // E = error 
+
 
                         // TODO: add/update similar statuses for ticketDetail table
 
@@ -1126,11 +1209,12 @@ namespace ACECommerce
 
                                 if (loggingSettings.Debug) WriteConsoleMessage($"Checking existence of {r["Order_Email"].ToString()} as an Ecomm Customer", databaseSettings.MT_EMLConnectionString);
 
+                                string currentTransactionId = r["transactionid"].ToString();
                                 string orderId = r["order_id"].ToString();
                                 string emailAddress = r["order_Email"].ToString();
                                 string externalId = r["Attending_Patron_Account_id"].ToString();
                                 string createdDate = r["OrderDate"] == DBNull.Value ? null : ((DateTime)r["OrderDate"]).ToString("yyyy-MM-ddTHH:mm:ss");
-                                string updatedDate = r["OrderUpdatedDtm"] == DBNull.Value ? null : ((DateTime)r["OrderUpdatedDtm"]).ToString("yyyy-MM-ddTHH:mm:ss");
+                                string updatedDate = r["LastUpdatedDtm"] == DBNull.Value ? null : ((DateTime)r["LastUpdatedDtm"]).ToString("yyyy-MM-ddTHH:mm:ss");
                                 
                                 string connectionId = acAPISettings.ConnectionId;
                                 string customerId = "";
@@ -1209,112 +1293,235 @@ namespace ACECommerce
 
                                     }
 
-                                    // at this point we have a customerid (either from lookup or create)
-                                    // create the order products, discount and header info
+                                    WriteConsoleMessage($"Checking existence of order id {orderId} in Ecomm.", databaseSettings.MT_EMLConnectionString);
 
-                                    // Get tickets details for the order
-                                    // Each product on the order comes from ticket buyer_type_code
-                                    var orderProducts = new List<OrderProduct>();
-                                    var orderTicketDetails = queryTicketDetails.Replace("<Order_Id>", orderId);
-                                    MySqlDataAdapter daApiTicketList = new MySqlDataAdapter(orderTicketDetails, emlConnection);
-                                    DataSet dsApiTicketList = new DataSet();
-                                    daApiTicketList.Fill(dsApiTicketList);
-
-
-                                    foreach (DataRow t in dsApiTicketList.Tables[0].Rows)
-                                    {
-                                        var orderProduct = new OrderProduct
-                                        {
-                                            ExternalId = t["buyer_type_code"].ToString(),
-                                            Name = t["buyer_type_desc"].ToString(),
-                                            Price = (int)((decimal)t["TicketPrice"] * 100),
-                                            Quantity = (int)((decimal)t["TicketCount"]),
-                                            Category = t["buyer_type_group_id"].ToString(),
-                                            Sku = t["buyer_type_code"].ToString(),
-                                            Description = t["buyer_type_desc"].ToString(),
-                                            ImageUrl = "",
-                                            ProductUrl = ""
-                                        };
-                                        orderProducts.Add(orderProduct);
-                                    }
-
-                                    // get coupon details if present
-                                    var orderDiscounts = new List<OrderDiscount>();
-                                    if (r["coupon"] != DBNull.Value && !String.IsNullOrEmpty(r["coupon"].ToString()))
-                                    {
-                                        var orderDiscount = new OrderDiscount();
-                                        orderDiscount.Name = r["coupon"].ToString();
-                                        orderDiscount.Type = "order";
-                                        orderDiscount.DiscountAmount = 0;
-                                        orderDiscounts.Add(orderDiscount);
-                                    }
-                                    ;
-
-                                    var orderWrapper = new EcomOrderWrapper
-                                    {
-                                        EcomOrder = new EcomOrder
-                                        {
-                                            ExternalId = orderId,
-                                            Source = "1",
-                                            Email = emailAddress,
-                                            ConnectionId = connectionId,
-                                            CustomerId = customerId,
-                                            OrderNumber = orderId,
-                                            ExternalCreatedDate = createdDate,
-                                            ExternalUpdatedDate = updatedDate,
-                                            Currency = "USD",
-                                            TotalPrice = (int)(((decimal)r["TicketsValue"] + (decimal)r["UpSellsValue"] + (decimal)r["SalesTax"]) * 100),
-                                            ShippingAmount = 0,
-                                            TaxAmount = (int)((decimal)r["SalesTax"] * 100),
-                                            DiscountAmount = 0,
-                                            ShippingMethod = "",
-                                            OrderUrl = "",
-                                            OrderProducts = orderProducts,
-                                            OrderDiscounts = orderDiscounts
-                                        }
-                                    };
-
-
-                                    // now post the order
-                                    // serialize to JSON
-                                    //var orderOptions = new JsonSerializerOptions { WriteIndented = true };
-                                    //string orderJson = JsonSerializer.Serialize(orderWrapper, orderOptions);
-                                    string orderJson = JsonSerializer.Serialize(orderWrapper);
-
-                                    WriteConsoleMessage($"Posting Order JSON: {orderJson}", databaseSettings.MT_EMLConnectionString);
-
-                                    ApiResponse orderResponse = await apiClient.PostCustomerOrOrdersAsync(url, orderJson, "ecomOrders"); // path is case sensitive
-                                    if (orderResponse.IsSuccess)
+                                    // see if external order id already exists
+                                    var existingOrderId = "-1";
+                                    var processOrderToEcomm = false;
+                                    ApiResponse checkOrderResponse = await apiClient.GetOrderAsync(url, connectionId, orderId);
+                                    if (checkOrderResponse.IsSuccess)
                                     {
                                         // Parse the string into a JsonDocument
-                                        using JsonDocument doc = JsonDocument.Parse(orderResponse.Content);
-
-                                        // Navigate to the "ecomCustomer" object
-                                        JsonElement orderRoot = doc.RootElement;
-
-                                        if (orderRoot.TryGetProperty("ecomOrder", out JsonElement ecomOrder))
+                                        using var doc = JsonDocument.Parse(checkOrderResponse.Content);
+                                        // Navigate to the "ecomOrders" object
+                                        var checkRoot = doc.RootElement;
+                                        var orders = checkRoot.GetProperty("ecomOrders");
+                                        if (orders.GetArrayLength() > 0)
                                         {
-                                            if (ecomOrder.TryGetProperty("id", out JsonElement idElement))
+                                            var returnedExternalId = orders[0].GetProperty("externalid").GetString();
+                                            if (returnedExternalId == orderId)
                                             {
-                                                var newOrderId = idElement.GetString();
-                                                WriteConsoleMessage($"Ecom order id {newOrderId} created with ExternalOrderId {orderId}", databaseSettings.MT_EMLConnectionString);
+                                                processOrderToEcomm = true;
+                                                existingOrderId = orders[0].GetProperty("id").GetString();
+                                                WriteConsoleMessage($"ExternalOrderId {orderId} found with Ecom order id {existingOrderId}, order will be updated.", databaseSettings.MT_EMLConnectionString);
+
+                                                MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdatePostTypeString.Replace("<Order_Post_Type>", "U").Replace("<Response_Object>", checkOrderResponse.Content.Replace("'", "''")).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
+                                                daOrderUpdateData.ExecuteNonQuery();
                                             }
                                             else
                                             {
-                                                WriteConsoleMessage($"Could not get id property from {orderResponse.Content}", databaseSettings.MT_EMLConnectionString);
+                                                WriteConsoleMessage($"Error: Returned ExternalId {returnedExternalId} does not match current externalId {orderId}", databaseSettings.MT_EMLConnectionString);
+                                                MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "E").Replace("<Response_Object>", checkOrderResponse.Content.Replace("'", "''")).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
+                                                daOrderUpdateData.ExecuteNonQuery();
                                             }
 
                                         }
                                         else
                                         {
-                                            WriteConsoleMessage($"Could not get ecomOrder property from {orderResponse.Content}", databaseSettings.MT_EMLConnectionString);
+                                            processOrderToEcomm = true;
+                                            WriteConsoleMessage($"External Id {orderId} not found, creating new.", databaseSettings.MT_EMLConnectionString);
+                                            MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdatePostTypeString.Replace("<Order_Post_Type>", "I").Replace("<Response_Object>", checkOrderResponse.Content.Replace("'", "''")).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
+                                            daOrderUpdateData.ExecuteNonQuery();
                                         }
                                     }
-                                    else
-                                    {
-                                        //using JsonDocument doc = JsonDocument.Parse(orderResponse.Content);
-                                        WriteConsoleMessage($"FAILED Order Post for ExternalOrderId: {orderId} Status: {orderResponse.StatusCode} ErrorMessage: {orderResponse.ErrorMessage}", databaseSettings.MT_EMLConnectionString);
 
+                                    if (processOrderToEcomm)
+                                    {
+                                        // at this point we have a customerid (either from lookup or create)
+                                        // create the order products, discount and header info
+
+                                        // Get tickets details for the order
+                                        // Each product on the order comes from ticket buyer_type_code
+                                        var orderProducts = new List<OrderProduct>();
+                                        var orderTicketDetails = queryTicketDetails.Replace("<Order_Id>", orderId);
+                                        MySqlDataAdapter daApiTicketList = new MySqlDataAdapter(orderTicketDetails, emlConnection);
+                                        DataSet dsApiTicketList = new DataSet();
+                                        daApiTicketList.Fill(dsApiTicketList);
+
+
+                                        foreach (DataRow t in dsApiTicketList.Tables[0].Rows)
+                                        {
+                                            var orderProduct = new OrderProduct
+                                            {
+                                                ExternalId = t["buyer_type_code"].ToString(),
+                                                Name = t["buyer_type_desc"].ToString(),
+                                                Price = (int)((decimal)t["TicketPrice"] * 100),
+                                                Quantity = (int)((decimal)t["TicketCount"]),
+                                                Category = t["buyer_type_group_id"].ToString(),
+                                                Sku = t["buyer_type_code"].ToString(),
+                                                Description = t["buyer_type_desc"].ToString(),
+                                                ImageUrl = "",
+                                                ProductUrl = ""
+                                            };
+                                            orderProducts.Add(orderProduct);
+                                        }
+
+                                        // get coupon details if present
+                                        var orderDiscounts = new List<OrderDiscount>();
+                                        if (r["coupon"] != DBNull.Value && !String.IsNullOrEmpty(r["coupon"].ToString()))
+                                        {
+                                            var orderDiscount = new OrderDiscount();
+                                            orderDiscount.Name = r["coupon"].ToString();
+                                            orderDiscount.Type = "order";
+                                            orderDiscount.DiscountAmount = 0;
+                                            orderDiscounts.Add(orderDiscount);
+                                        }
+                                    ;
+
+                                        // default order wrapper for insert
+                                        var orderWrapper = new EcomOrderWrapper
+                                        {
+                                            EcomOrder = new EcomOrder
+                                            {
+                                                ExternalId = orderId,
+                                                Source = "1",
+                                                Email = emailAddress,
+                                                ConnectionId = connectionId,
+                                                CustomerId = customerId,
+                                                OrderNumber = orderId,
+                                                ExternalCreatedDate = createdDate,
+                                                ExternalUpdatedDate = updatedDate,
+                                                Currency = "USD",
+                                                TotalPrice = (int)(((decimal)r["TicketsValue"] + (decimal)r["UpSellsValue"] + (decimal)r["SalesTax"]) * 100),
+                                                ShippingAmount = 0,
+                                                TaxAmount = (int)((decimal)r["SalesTax"] * 100),
+                                                DiscountAmount = 0,
+                                                ShippingMethod = "",
+                                                OrderUrl = "",
+                                                OrderProducts = orderProducts,
+                                                OrderDiscounts = orderDiscounts
+                                            }
+                                        };
+
+                                        if (existingOrderId != "-1")
+                                        {
+                                            orderWrapper.EcomOrder.Source = null;
+                                            orderWrapper.EcomOrder.ExternalCreatedDate = null;
+                                            orderWrapper.EcomOrder.ConnectionId = null;
+                                            orderWrapper.EcomOrder.CustomerId = null;
+                                        }
+
+                                        // now post the order
+                                        // serialize to JSON
+                                        //var orderOptions = new JsonSerializerOptions { WriteIndented = true };
+                                        //string orderJson = JsonSerializer.Serialize(orderWrapper, orderOptions);
+                                        var orderOptions = new JsonSerializerOptions { DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull };
+                                        string orderJson = JsonSerializer.Serialize(orderWrapper, orderOptions);
+
+                                        if (existingOrderId == "-1")
+                                        {
+                                            WriteConsoleMessage($"Creating new order - POST Order JSON: {orderJson}", databaseSettings.MT_EMLConnectionString);
+
+                                            ApiResponse orderResponse = await apiClient.PostCustomerOrOrdersAsync(url, orderJson, "ecomOrders"); // path is case sensitive
+                                            if (orderResponse.IsSuccess)
+                                            {
+                                                // Parse the string into a JsonDocument
+                                                using JsonDocument doc = JsonDocument.Parse(orderResponse.Content);
+
+                                                // Navigate to the "ecomOrder" object
+                                                JsonElement orderRoot = doc.RootElement;
+
+                                                if (orderRoot.TryGetProperty("ecomOrder", out JsonElement ecomOrder))
+                                                {
+                                                    if (ecomOrder.TryGetProperty("id", out JsonElement idElement))
+                                                    {
+                                                        var newOrderId = idElement.GetString();
+                                                        WriteConsoleMessage($"Ecom order id {newOrderId} created with ExternalOrderId {orderId}", databaseSettings.MT_EMLConnectionString);
+
+                                                        MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "Y").Replace("<Response_Object>", response.Content.Replace("'", "''")).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
+                                                        daOrderUpdateData.ExecuteNonQuery();
+                                                    }
+                                                    else
+                                                    {
+                                                        WriteConsoleMessage($"Could not get id property from {orderResponse.Content}", databaseSettings.MT_EMLConnectionString);
+                                                        MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "Z").Replace("<Response_Object>", response.Content.Replace("'", "''")).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
+                                                        daOrderUpdateData.ExecuteNonQuery();
+                                                    }
+
+                                                }
+                                                else
+                                                {
+                                                    WriteConsoleMessage($"Could not get ecomOrder property from {orderResponse.Content}", databaseSettings.MT_EMLConnectionString);
+                                                    MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "Z").Replace("<Response_Object>", response.Content.Replace("'", "''")).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
+                                                    daOrderUpdateData.ExecuteNonQuery();
+                                                }
+                                            }
+                                            else
+                                            {
+                                                //using JsonDocument doc = JsonDocument.Parse(orderResponse.Content);
+                                                WriteConsoleMessage($"FAILED Order Post for ExternalOrderId: {orderId} Status: {orderResponse.StatusCode} ErrorMessage: {orderResponse.ErrorMessage}", databaseSettings.MT_EMLConnectionString);
+                                                MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "E").Replace("<Response_Object>", response.ErrorMessage).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
+                                                daOrderUpdateData.ExecuteNonQuery();
+
+                                            }
+                                        }
+                                        else
+                                        {
+                                            WriteConsoleMessage($"Updating existing order {existingOrderId} - PUT Order JSON: {orderJson}", databaseSettings.MT_EMLConnectionString);
+
+                                            ApiResponse updateResponse = await apiClient.UpdateOrdersAsync(url, orderJson, "ecomOrders", existingOrderId); // path is case sensitive
+                                            if (updateResponse.IsSuccess)
+                                            {
+                                                // Parse the string into a JsonDocument
+                                                using JsonDocument doc = JsonDocument.Parse(updateResponse.Content);
+
+                                                // Navigate to the "ecomOrder" object
+                                                JsonElement orderRoot = doc.RootElement;
+
+                                                if (orderRoot.TryGetProperty("ecomOrder", out JsonElement ecomOrder))
+                                                {
+                                                    if (ecomOrder.TryGetProperty("id", out JsonElement idElement))
+                                                    {
+                                                        var newOrderId = idElement.GetString();
+                                                        if (newOrderId == existingOrderId)
+                                                        {
+                                                            WriteConsoleMessage($"Ecom order id {newOrderId} updated for ExternalOrderId {orderId}", databaseSettings.MT_EMLConnectionString);
+
+                                                            MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "Y").Replace("<Response_Object>", response.Content.Replace("'", "''")).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
+                                                            daOrderUpdateData.ExecuteNonQuery();
+                                                        }
+                                                        else
+                                                        {
+                                                            WriteConsoleMessage($"Updated order id {newOrderId} does not match order we attempted to update {existingOrderId}", databaseSettings.MT_EMLConnectionString);
+                                                            MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "Z").Replace("<Response_Object>", response.Content.Replace("'", "''")).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
+                                                            daOrderUpdateData.ExecuteNonQuery();
+                                                        }
+                                                    }
+                                                    else
+                                                    {
+                                                        WriteConsoleMessage($"Could not get id property from {updateResponse.Content}", databaseSettings.MT_EMLConnectionString);
+                                                        MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "Z").Replace("<Response_Object>", response.Content.Replace("'", "''")).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
+                                                        daOrderUpdateData.ExecuteNonQuery();
+                                                    }
+
+                                                }
+                                                else
+                                                {
+                                                    WriteConsoleMessage($"Could not get ecomOrder property from {updateResponse.Content}", databaseSettings.MT_EMLConnectionString);
+                                                    MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "Z").Replace("<Response_Object>", response.Content.Replace("'", "''")).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
+                                                    daOrderUpdateData.ExecuteNonQuery();
+                                                }
+                                            }
+                                            else
+                                            {
+                                                //using JsonDocument doc = JsonDocument.Parse(orderResponse.Content);
+                                                WriteConsoleMessage($"FAILED to update order {existingOrderId} with ExternalOrderId: {orderId} Status: {updateResponse.StatusCode} ErrorMessage: {updateResponse.ErrorMessage}", databaseSettings.MT_EMLConnectionString);
+                                                MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "E").Replace("<Response_Object>", response.ErrorMessage).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
+                                                daOrderUpdateData.ExecuteNonQuery();
+
+                                            }
+                                        }
+                                        
                                     }
                                     
                                 }
@@ -1328,6 +1535,7 @@ namespace ACECommerce
                                     //         MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "E").Replace("<Response_Object>", ex.Message).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
                                     //         daOrderUpdateData.ExecuteNonQuery();
                                     //     }
+
                                     // }
                                     // catch (Exception ex2) { WriteConsoleMessage($"We ignored an error within a catch block.  {ex2.Message}", databaseSettings.MT_EMLConnectionString); }
 
