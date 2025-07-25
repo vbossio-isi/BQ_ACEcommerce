@@ -321,6 +321,7 @@ namespace ACECommerce
             }
             catch (HttpRequestException e)
             {
+                //TODO: log this to more than the console and with more info!
                 Console.WriteLine($"Error: {e.Message}");
                 return null;
             }
@@ -845,12 +846,19 @@ namespace ACECommerce
 
                 string queryOrderUpdateString = "UPDATE tbl_MKTECommOrderInfo SET Order_Update_Status = '<Order_Update_Status>', Order_Updated_Dtm = CURRENT_TIMESTAMP, Response_Object = '<Response_Object>' WHERE TransactionId = <MaxTransactionId>";
 
+                string queryTicketUpdateString = "UPDATE tbl_MKTECommTicketDetail SET Ticket_Update_Status = '<Ticket_Update_Status>', Ticket_Updated_Dtm = CURRENT_TIMESTAMP, Response_Object = '<Response_Object>' WHERE Ticket_ID = <Ticket_Id>";
+
+
                 string queryOrderUpdatePostTypeString = "UPDATE tbl_MKTECommOrderInfo SET Order_Post_Type = '<Order_Post_Type>', Order_Updated_Dtm = CURRENT_TIMESTAMP, Response_Object = '<Response_Object>' WHERE TransactionId = <MaxTransactionId>";
 
                 string queryOrderACDataString = "UPDATE tbl_MKTECommOrderInfo SET AC_Exists ='<AC_Exists>', AC_ID = <AC_ID>, AC_Active_List = '<AC_Active_List>' WHERE TransactionId = <MaxTransactionId>";
 
-                string queryRecordsMaintenanceString = "DELETE FROM tbl_MKTECommOrderInfo WHERE Last_Updated_Dtm < NOW()- interval <ConfirmationTrimInterval> day; " +
-                                                        "TRUNCATE TABLE tbl_MKTECommTicketDetail;" +
+                string queryRecordsMaintenanceString = "DELETE t FROM tbl_MKTECommTicketDetail t " +
+                                                        " INNER JOIN tbl_MKTECommOrderInfo o ON t.ORDER_ID = o.ORDER_ID " +
+                                                        " WHERE o.Last_Updated_Dtm < NOW()- interval <ConfirmationTrimInterval> day; " +
+
+                                                        "DELETE FROM tbl_MKTECommOrderInfo WHERE Last_Updated_Dtm < NOW()- interval <ConfirmationTrimInterval> day; " +
+
                                                         "DELETE FROM tbl_MKTECommOrderInfoLog WHERE LogDate < NOW()- interval <ConfirmationTrimInterval> day; ";
 
 
@@ -860,9 +868,9 @@ namespace ACECommerce
                     {
                         if (loggingSettings.Debug) WriteConsoleMessage("Opening connection to EML", databaseSettings.MT_EMLConnectionString);
                         emlConnection.Open();
-// TODO: PUT THIS BACK AT SOME POINT BUT FIX IT SO IT DOESN'T JUST TRUNCATE THE TICKET TABLE!
-                        // MySqlCommand cmdRecordsMaintenance = new MySqlCommand(queryRecordsMaintenanceString.Replace("<ConfirmationTrimInterval>", loggingSettings.ConfirmationTrimInterval), emlConnection);
-                        // cmdRecordsMaintenance.ExecuteNonQuery();
+
+                        MySqlCommand cmdRecordsMaintenance = new MySqlCommand(queryRecordsMaintenanceString.Replace("<ConfirmationTrimInterval>", loggingSettings.ConfirmationTrimInterval), emlConnection);
+                        cmdRecordsMaintenance.ExecuteNonQuery();
 
                         string maxLast_Updated_DtmString = string.Empty;
 
@@ -1132,13 +1140,7 @@ namespace ACECommerce
                                     if (loggingSettings.Debug) WriteConsoleMessage("Inserting tickets into tbl_MKTECommTicketDetail", databaseSettings.MT_EMLConnectionString);
                                     foreach (DataRow r in dsTickets.Tables[0].Rows)
                                     {
-                                        // bring this back after insert!
-                                        // MySqlDataAdapter daVerifyOrder = new MySqlDataAdapter(queryOrdersVerifyString.Replace("<VALUE>", r["MAX_TRANSACTION_ID"].ToString()).Replace("<Last_Updated_Dtm>", r["LAST_UPDATED_DATE"].ToString()), emlConnection);
-                                        // DataSet dsVerifyOrder = new DataSet();
-                                        // daVerifyOrder.Fill(dsVerifyOrder);
-                                        // DataRow r2 = dsVerifyOrder.Tables[0].Rows[0];
-                                        // if (0 == int.Parse(r2["PreviousOrderCount"].ToString()))
-                                        // {
+
                                         if (loggingSettings.Debug) WriteConsoleMessage("Inserting TransactionId to TicketDetails " + r["TRANSACTION_ID"].ToString(), databaseSettings.MT_EMLConnectionString);
 
                                         ticketValuesString =
@@ -1171,17 +1173,10 @@ namespace ACECommerce
                                         //if (loggingSettings.Debug) WriteConsoleMessage(cmdInsertTicket.CommandText);
 
                                         cmdInsertTicket.ExecuteNonQuery();
-                                        // }
-                                        // else
-                                        // {
-                                        //     if (loggingSettings.Debug) WriteConsoleMessage($"Skipping TransactionId {r["MAX_TRANSACTION_ID"].ToString()} because it was already processed", databaseSettings.MT_EMLConnectionString);
-                                        // }
+
                                     }
                                     if (loggingSettings.Debug) WriteConsoleMessage("Finished inserting tickets into tbl_MKTECommTicketDetail", databaseSettings.MT_EMLConnectionString);
 
-                                    // if (loggingSettings.Debug) WriteConsoleMessage("Update orders to skip if location not active", databaseSettings.MT_EMLConnectionString);
-                                    // MySqlCommand cmdUpdateOrdersToSkip = new MySqlCommand(queryUpdateOrdersToSkip, emlConnection);
-                                    // cmdUpdateOrdersToSkip.ExecuteNonQuery();
                                 }
                                 catch (Exception ex)
                                 {
@@ -1222,6 +1217,7 @@ namespace ACECommerce
 
                                 try
                                 {
+                                    //TODO: see GetCustomerAsync for TODO details
                                     ApiResponse response = await apiClient.GetCustomerAsync(url, connectionId, emailAddress);
 
                                     if (response.IsSuccess)
@@ -1242,7 +1238,9 @@ namespace ACECommerce
                                     }
                                     else
                                     {
-                                        // todo: handle failure
+                                        // todo: (TEST this) handle failure as an ORDER status update (not ticket yet)
+                                        MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "E").Replace("<Response_Object>", response.ErrorMessage).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
+                                        daOrderUpdateData.ExecuteNonQuery();
                                     }
 
                                     // create customer if it doesn't already exist
@@ -1357,8 +1355,8 @@ namespace ACECommerce
                                                 Name = t["buyer_type_desc"].ToString(),
                                                 Price = (int)((decimal)t["TicketPrice"] * 100),
                                                 Quantity = (int)((decimal)t["TicketCount"]),
-                                                Category = t["buyer_type_group_id"].ToString(),
-                                                Sku = t["buyer_type_code"].ToString(),
+                                                //Category = t["buyer_type_group_id"].ToString(),
+                                                //Sku = t["buyer_type_code"].ToString(),
                                                 Description = t["buyer_type_desc"].ToString(),
                                                 ImageUrl = "",
                                                 ProductUrl = ""
