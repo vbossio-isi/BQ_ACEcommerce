@@ -216,7 +216,7 @@ namespace ACECommerce
             _client.DefaultRequestHeaders.Add("Host", "medievaltimes.api-us1.com");
         }
 
-        public async Task<ApiResponse> PostRecordAsync(string URL, string json, string path)
+        public async Task<ApiResponse> PostRecordAsync(string URL, string json, string path, string dbConnectionString)
         {
             var url = $"https://{URL}/{path}";
             var jsonContent = new StringContent(json, Encoding.UTF8, "application/json");
@@ -250,11 +250,12 @@ namespace ACECommerce
             catch (HttpRequestException e)
             {
 
-                Console.WriteLine($"Error: {e.Message}");
+                //Console.WriteLine($"Error: {e.Message}");
+                Program.WriteConsoleMessage($"Error: {e.Message} posting to {URL}", dbConnectionString);
                 return null;
             }
         }
-        public async Task<ApiResponse> GetContactAsync(string URL, string emailAddress)
+        public async Task<ApiResponse> GetContactAsync(string URL, string emailAddress, string dbConnectionString)
         {
             string url = $"https://{URL}/contacts?filters[email]={Uri.EscapeDataString(emailAddress)}&include=contactLists";
 
@@ -285,12 +286,13 @@ namespace ACECommerce
             }
             catch (HttpRequestException e)
             {
-                Console.WriteLine($"Error: {e.Message}");
+                //Console.WriteLine($"Error: {e.Message}");
+                Program.WriteConsoleMessage($"Error: {e.Message} getting contact with email {emailAddress}", dbConnectionString);
                 return null;
             }
         }
 
-        public async Task<ApiResponse> GetCustomerAsync(string URL, string connectionId, string emailAddress)
+        public async Task<ApiResponse> GetCustomerAsync(string URL, string connectionId, string emailAddress, string dbConnectionString)
         {
             string url = $"https://{URL}/ecomCustomers?filters[connectionid]={connectionId}&filters[email]={Uri.EscapeDataString(emailAddress)}";
 
@@ -321,13 +323,13 @@ namespace ACECommerce
             }
             catch (HttpRequestException e)
             {
-                //TODO: log this to more than the console and with more info!
-                Console.WriteLine($"Error: {e.Message}");
+                //Console.WriteLine($"Error: {e.Message}");
+                Program.WriteConsoleMessage($"Error: {e.Message} getting ecomCustomer with email {emailAddress}", dbConnectionString);
                 return null;
             }
         }
 
-        public async Task<ApiResponse> GetOrderAsync(string URL, string connectionId, string externalId)
+        public async Task<ApiResponse> GetOrderAsync(string URL, string connectionId, string externalId, string dbConnectionString)
         {
             string url = $"https://{URL}/ecomOrders?filters[connectionid]={connectionId}&filters[externalid]={Uri.EscapeDataString(externalId)}";
 
@@ -358,12 +360,13 @@ namespace ACECommerce
             }
             catch (HttpRequestException e)
             {
-                Console.WriteLine($"Error: {e.Message}");
+                //Console.WriteLine($"Error: {e.Message}");
+                Program.WriteConsoleMessage($"Error: {e.Message} getting Order with externalId {externalId}", dbConnectionString);
                 return null;
             }
         }
 
-        public async Task<ApiResponse> PostCustomerOrOrdersAsync(string URL, string json, string path)
+        public async Task<ApiResponse> PostCustomerOrOrdersAsync(string URL, string json, string path, string dbConnectionString)
         {
             var url = $"https://{URL}/{path}";
             var jsonContent = new StringContent(json, Encoding.UTF8, "application/json");
@@ -397,12 +400,13 @@ namespace ACECommerce
             catch (HttpRequestException e)
             {
 
-                Console.WriteLine($"Error: {e.Message}");
+                //Console.WriteLine($"Error: {e.Message}");
+                Program.WriteConsoleMessage($"Error: {e.Message} posting to {URL}", dbConnectionString);
                 return null;
             }
         }
 
-        public async Task<ApiResponse> UpdateOrdersAsync(string URL, string json, string path, string existingOrderId)
+        public async Task<ApiResponse> UpdateOrdersAsync(string URL, string json, string path, string existingOrderId, string dbConnectionString)
         {
             var url = $"https://{URL}/{path}/{existingOrderId}";
             var jsonContent = new StringContent(json, Encoding.UTF8, "application/json");
@@ -436,7 +440,8 @@ namespace ACECommerce
             catch (HttpRequestException e)
             {
 
-                Console.WriteLine($"Error: {e.Message}");
+                //Console.WriteLine($"Error: {e.Message}");
+                Program.WriteConsoleMessage($"Error: {e.Message} updating order {existingOrderId}", dbConnectionString);
                 return null;
             }
         }
@@ -539,7 +544,7 @@ namespace ACECommerce
             return false;
         }
 
-        private static void WriteConsoleMessage(string msg, string mySQLconnectionString)
+        public static void WriteConsoleMessage(string msg, string mySQLconnectionString)
         {
             WriteConsoleMessage(msg);
 
@@ -568,7 +573,7 @@ namespace ACECommerce
             Console.WriteLine(string.Concat(DateTime.Now, ": ", ex.Message));
         }
 
-        static async Task Main(string[] args)
+        public static async Task Main(string[] args)
         {
             IConfigurationBuilder builder = new ConfigurationBuilder().AddJsonFile("appsettings.json", false, true);
             IConfigurationRoot root = builder.Build();
@@ -861,7 +866,7 @@ namespace ACECommerce
 
                                                         "DELETE FROM tbl_MKTECommOrderInfoLog WHERE LogDate < NOW()- interval <ConfirmationTrimInterval> day; ";
 
-
+//TODO: Retries on all api calls !
                 using (MySqlConnection emlConnection = new MySqlConnection(databaseSettings.MT_EMLConnectionString))
                 {
                     try
@@ -997,7 +1002,7 @@ namespace ACECommerce
 
                                         try
                                         {
-                                            ApiResponse response = await apiClient.GetContactAsync(url, emailAddress);
+                                            ApiResponse response = await apiClient.GetContactAsync(url, emailAddress, databaseSettings.MT_EMLConnectionString);
 
                                             if (response.IsSuccess)
                                             {
@@ -1047,7 +1052,9 @@ namespace ACECommerce
                                             }
                                             else
                                             {
-                                                MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "E").Replace("<Response_Object>", response.ErrorMessage).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
+                                                var responseContent = $"API error status: {response.StatusCode} {response.Content} {response.ErrorMessage}";
+                                                WriteConsoleMessage($"Could not get contact for transactionid {currentTransactionId}", databaseSettings.MT_EMLConnectionString);
+                                                MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "E").Replace("<Response_Object>", responseContent).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
                                                 daOrderUpdateData.ExecuteNonQuery();
                                             }
                                         }
@@ -1217,8 +1224,7 @@ namespace ACECommerce
 
                                 try
                                 {
-                                    //TODO: see GetCustomerAsync for TODO details
-                                    ApiResponse response = await apiClient.GetCustomerAsync(url, connectionId, emailAddress);
+                                    ApiResponse response = await apiClient.GetCustomerAsync(url, connectionId, emailAddress, databaseSettings.MT_EMLConnectionString);
 
                                     if (response.IsSuccess)
                                     {
@@ -1238,14 +1244,16 @@ namespace ACECommerce
                                     }
                                     else
                                     {
-                                        // todo: (TEST this) handle failure as an ORDER status update (not ticket yet)
-                                        MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "E").Replace("<Response_Object>", response.ErrorMessage).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
+                                        var responseContent = $"API error status: {response.StatusCode} {response.Content} {response.ErrorMessage}";
+                                        MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "E").Replace("<Response_Object>", responseContent).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
                                         daOrderUpdateData.ExecuteNonQuery();
+                                        continue; // go to next row, do not process order if customer lookup failed
                                     }
 
                                     // create customer if it doesn't already exist
                                     if (!customerExists)
                                     {
+                                        customerId = "";
                                         // add customer 
                                         var wrapper = new EcomCustomerWrapper
                                         {
@@ -1259,14 +1267,15 @@ namespace ACECommerce
                                         };
 
                                         // serialize to JSON
-                                        var options = new JsonSerializerOptions { WriteIndented = true };
-                                        string json = JsonSerializer.Serialize(wrapper, options);
-                                        // TODO: remove indent above and log json
+                                        // var options = new JsonSerializerOptions { WriteIndented = true };
+                                        // string json = JsonSerializer.Serialize(wrapper, options);
+                                        string json = JsonSerializer.Serialize(wrapper);
+                                        WriteConsoleMessage($"Creating new ECom customer {json}", databaseSettings.MT_EMLConnectionString);
 
-                                        ApiResponse createResponse = await apiClient.PostCustomerOrOrdersAsync(url, json, "ecomCustomers"); // path is case sensitive
+                                        ApiResponse createResponse = await apiClient.PostCustomerOrOrdersAsync(url, json, "ecomCustomers", databaseSettings.MT_EMLConnectionString); // path is case sensitive
                                         if (createResponse.IsSuccess)
                                         {
-                                            //TODO: log customer id created
+
                                             // Parse the string into a JsonDocument
                                             using JsonDocument doc = JsonDocument.Parse(createResponse.Content);
 
@@ -1280,15 +1289,25 @@ namespace ACECommerce
                                                     customerId = idElement.GetString();
                                                 }
                                             }
+                                            WriteConsoleMessage($"Customer id {customerId} created", databaseSettings.MT_EMLConnectionString);
                                         }
                                         else
                                         {
-                                            // todo: handle failure
-                                            // Success doesn't mean they exist, have to check array
-                                            using JsonDocument doc = JsonDocument.Parse(createResponse.Content);
-
+                                            var createResponseContent = $"API error status: {createResponse.StatusCode} {createResponse.Content} {createResponse.ErrorMessage}";
+                                            MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "E").Replace("<Response_Object>", createResponseContent).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
+                                            daOrderUpdateData.ExecuteNonQuery();
+                                            continue; // go to next row, do not process order if customer could not be created
                                         }
 
+                                    }
+
+                                    // double check that we have a valid customer id assigned
+                                    if (string.IsNullOrEmpty(customerId))
+                                    {
+                                        WriteConsoleMessage($"Customer id is blank for order {orderId}", databaseSettings.MT_EMLConnectionString);
+                                        MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "E").Replace("<Response_Object>", $"Customer id is blank for order {orderId}").Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
+                                        daOrderUpdateData.ExecuteNonQuery();
+                                        continue; // do not process if we don't have a valid customer
                                     }
 
                                     WriteConsoleMessage($"Checking existence of order id {orderId} in Ecomm.", databaseSettings.MT_EMLConnectionString);
@@ -1296,7 +1315,7 @@ namespace ACECommerce
                                     // see if external order id already exists
                                     var existingOrderId = "-1";
                                     var processOrderToEcomm = false;
-                                    ApiResponse checkOrderResponse = await apiClient.GetOrderAsync(url, connectionId, orderId);
+                                    ApiResponse checkOrderResponse = await apiClient.GetOrderAsync(url, connectionId, orderId, databaseSettings.MT_EMLConnectionString);
                                     if (checkOrderResponse.IsSuccess)
                                     {
                                         // Parse the string into a JsonDocument
@@ -1331,6 +1350,13 @@ namespace ACECommerce
                                             MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdatePostTypeString.Replace("<Order_Post_Type>", "I").Replace("<Response_Object>", checkOrderResponse.Content.Replace("'", "''")).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
                                             daOrderUpdateData.ExecuteNonQuery();
                                         }
+                                    }
+                                    else
+                                    {
+                                        var checkOrderResponseContent = $"API error status: {checkOrderResponse.StatusCode} {checkOrderResponse.Content} {checkOrderResponse.ErrorMessage}";
+                                        MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "E").Replace("<Response_Object>", checkOrderResponseContent).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
+                                        daOrderUpdateData.ExecuteNonQuery();
+                                        continue; // go to next row, do not continue if check for existing order failed
                                     }
 
                                     if (processOrderToEcomm)
@@ -1420,7 +1446,7 @@ namespace ACECommerce
                                         {
                                             WriteConsoleMessage($"Creating new order - POST Order JSON: {orderJson}", databaseSettings.MT_EMLConnectionString);
 
-                                            ApiResponse orderResponse = await apiClient.PostCustomerOrOrdersAsync(url, orderJson, "ecomOrders"); // path is case sensitive
+                                            ApiResponse orderResponse = await apiClient.PostCustomerOrOrdersAsync(url, orderJson, "ecomOrders", databaseSettings.MT_EMLConnectionString); // path is case sensitive
                                             if (orderResponse.IsSuccess)
                                             {
                                                 // Parse the string into a JsonDocument
@@ -1436,13 +1462,13 @@ namespace ACECommerce
                                                         var newOrderId = idElement.GetString();
                                                         WriteConsoleMessage($"Ecom order id {newOrderId} created with ExternalOrderId {orderId}", databaseSettings.MT_EMLConnectionString);
 
-                                                        MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "Y").Replace("<Response_Object>", response.Content.Replace("'", "''")).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
+                                                        MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "Y").Replace("<Response_Object>", orderResponse.Content.Replace("'", "''")).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
                                                         daOrderUpdateData.ExecuteNonQuery();
                                                     }
                                                     else
                                                     {
                                                         WriteConsoleMessage($"Could not get id property from {orderResponse.Content}", databaseSettings.MT_EMLConnectionString);
-                                                        MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "Z").Replace("<Response_Object>", response.Content.Replace("'", "''")).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
+                                                        MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "Z").Replace("<Response_Object>", orderResponse.Content.Replace("'", "''")).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
                                                         daOrderUpdateData.ExecuteNonQuery();
                                                     }
 
@@ -1450,15 +1476,15 @@ namespace ACECommerce
                                                 else
                                                 {
                                                     WriteConsoleMessage($"Could not get ecomOrder property from {orderResponse.Content}", databaseSettings.MT_EMLConnectionString);
-                                                    MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "Z").Replace("<Response_Object>", response.Content.Replace("'", "''")).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
+                                                    MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "Z").Replace("<Response_Object>", orderResponse.Content.Replace("'", "''")).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
                                                     daOrderUpdateData.ExecuteNonQuery();
                                                 }
                                             }
                                             else
                                             {
-                                                //using JsonDocument doc = JsonDocument.Parse(orderResponse.Content);
-                                                WriteConsoleMessage($"FAILED Order Post for ExternalOrderId: {orderId} Status: {orderResponse.StatusCode} ErrorMessage: {orderResponse.ErrorMessage}", databaseSettings.MT_EMLConnectionString);
-                                                MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "E").Replace("<Response_Object>", response.ErrorMessage).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
+                                                var orderResponseContent = $"API error status: {orderResponse.StatusCode} {orderResponse.Content} {orderResponse.ErrorMessage}";
+                                                WriteConsoleMessage($"FAILED Order Post for ExternalOrderId: {orderId} Status: {orderResponse.StatusCode} ErrorMessage: {orderResponseContent}", databaseSettings.MT_EMLConnectionString);
+                                                MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "E").Replace("<Response_Object>", orderResponseContent).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
                                                 daOrderUpdateData.ExecuteNonQuery();
 
                                             }
@@ -1467,7 +1493,7 @@ namespace ACECommerce
                                         {
                                             WriteConsoleMessage($"Updating existing order {existingOrderId} - PUT Order JSON: {orderJson}", databaseSettings.MT_EMLConnectionString);
 
-                                            ApiResponse updateResponse = await apiClient.UpdateOrdersAsync(url, orderJson, "ecomOrders", existingOrderId); // path is case sensitive
+                                            ApiResponse updateResponse = await apiClient.UpdateOrdersAsync(url, orderJson, "ecomOrders", existingOrderId, databaseSettings.MT_EMLConnectionString); // path is case sensitive
                                             if (updateResponse.IsSuccess)
                                             {
                                                 // Parse the string into a JsonDocument
@@ -1485,20 +1511,20 @@ namespace ACECommerce
                                                         {
                                                             WriteConsoleMessage($"Ecom order id {newOrderId} updated for ExternalOrderId {orderId}", databaseSettings.MT_EMLConnectionString);
 
-                                                            MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "Y").Replace("<Response_Object>", response.Content.Replace("'", "''")).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
+                                                            MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "Y").Replace("<Response_Object>", updateResponse.Content.Replace("'", "''")).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
                                                             daOrderUpdateData.ExecuteNonQuery();
                                                         }
                                                         else
                                                         {
                                                             WriteConsoleMessage($"Updated order id {newOrderId} does not match order we attempted to update {existingOrderId}", databaseSettings.MT_EMLConnectionString);
-                                                            MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "Z").Replace("<Response_Object>", response.Content.Replace("'", "''")).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
+                                                            MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "Z").Replace("<Response_Object>", updateResponse.Content.Replace("'", "''")).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
                                                             daOrderUpdateData.ExecuteNonQuery();
                                                         }
                                                     }
                                                     else
                                                     {
                                                         WriteConsoleMessage($"Could not get id property from {updateResponse.Content}", databaseSettings.MT_EMLConnectionString);
-                                                        MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "Z").Replace("<Response_Object>", response.Content.Replace("'", "''")).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
+                                                        MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "Z").Replace("<Response_Object>", updateResponse.Content.Replace("'", "''")).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
                                                         daOrderUpdateData.ExecuteNonQuery();
                                                     }
 
@@ -1506,15 +1532,15 @@ namespace ACECommerce
                                                 else
                                                 {
                                                     WriteConsoleMessage($"Could not get ecomOrder property from {updateResponse.Content}", databaseSettings.MT_EMLConnectionString);
-                                                    MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "Z").Replace("<Response_Object>", response.Content.Replace("'", "''")).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
+                                                    MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "Z").Replace("<Response_Object>", updateResponse.Content.Replace("'", "''")).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
                                                     daOrderUpdateData.ExecuteNonQuery();
                                                 }
                                             }
                                             else
                                             {
-                                                //using JsonDocument doc = JsonDocument.Parse(orderResponse.Content);
-                                                WriteConsoleMessage($"FAILED to update order {existingOrderId} with ExternalOrderId: {orderId} Status: {updateResponse.StatusCode} ErrorMessage: {updateResponse.ErrorMessage}", databaseSettings.MT_EMLConnectionString);
-                                                MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "E").Replace("<Response_Object>", response.ErrorMessage).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
+                                                var updateResponseContent = $"API error status: {updateResponse.StatusCode} {updateResponse.Content} {updateResponse.ErrorMessage}";
+                                                WriteConsoleMessage($"FAILED to update order {existingOrderId} with ExternalOrderId: {orderId} Status: {updateResponse.StatusCode} ErrorMessage: {updateResponseContent}", databaseSettings.MT_EMLConnectionString);
+                                                MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "E").Replace("<Response_Object>", updateResponse.ErrorMessage).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
                                                 daOrderUpdateData.ExecuteNonQuery();
 
                                             }
@@ -1525,17 +1551,6 @@ namespace ACECommerce
                                 }
                                 catch (Exception ex)
                                 {
-                                    // todo: reinstate as ticket update
-                                    // try
-                                    // {
-                                    //     if (int.TryParse(currentTransactionId, out int id))
-                                    //     {
-                                    //         MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "E").Replace("<Response_Object>", ex.Message).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
-                                    //         daOrderUpdateData.ExecuteNonQuery();
-                                    //     }
-
-                                    // }
-                                    // catch (Exception ex2) { WriteConsoleMessage($"We ignored an error within a catch block.  {ex2.Message}", databaseSettings.MT_EMLConnectionString); }
 
                                     if (loggingSettings.Debug) WriteConsoleMessage($"An error occured while processing Order ID {r["Order_Id"]} Email {r["Order_Email"]}  {ex.Message}", databaseSettings.MT_EMLConnectionString);
                                     WriteConsoleMessage(ex.Message, databaseSettings.MT_EMLConnectionString);
