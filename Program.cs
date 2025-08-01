@@ -230,35 +230,55 @@ namespace ACECommerce
             }
         }
 
-        public async Task<ApiResponse> PostRecordAsync(string URL, string json, string path)
+        public async Task<ApiResponse> CallApiWithRetry(string action, HttpMethod method, string url, HttpContent? content = null)
+        {
+            var apiResponse = new ApiResponse();
+
+            for (int i = 0; i < _numRetries; i++)
+            {
+                using (var requestMessage = new HttpRequestMessage(method, url))
+                {
+                    requestMessage.Headers.Add("MT-Request-Token", Guid.NewGuid().ToString());
+                    if (content != null)
+                    {
+                        requestMessage.Content = content;
+                    }
+
+                    var prefix = $"{action} Attempt {i + 1} of {_numRetries}";
+                    HttpResponseMessage response = await _client.SendAsync(requestMessage);
+                    apiResponse = new ApiResponse
+                    {
+                        StatusCode = response.StatusCode,
+                        IsSuccess = response.IsSuccessStatusCode
+                    };
+
+                    if (response.IsSuccessStatusCode)
+                    {
+                        apiResponse.Content = await response.Content.ReadAsStringAsync();
+                        break; // no need to retry 
+                    }
+                    else
+                    {
+                        apiResponse.ErrorMessage = await response.Content.ReadAsStringAsync();
+                        Program.WriteConsoleMessage($"{prefix} returned unsuccesful response {apiResponse.StatusCode} {apiResponse.ErrorMessage}", _dbConnectionString);
+                        Task.Delay(_retryDelay).Wait(); // Wait before the next try
+                    }
+                }
+            }
+
+            return apiResponse;
+        }
+
+        public async Task<ApiResponse> PostRecordAsync(string action, string URL, string json, string path)
         {
             var url = $"https://{URL}/{path}";
             var jsonContent = new StringContent(json, Encoding.UTF8, "application/json");
-            var requestMessage = new HttpRequestMessage(HttpMethod.Post, url);
-            requestMessage.Content = jsonContent;
-
-            requestMessage.Headers.Add("MT-Request-Token", Guid.NewGuid().ToString());
 
             try
             {
-                HttpResponseMessage response = await _client.SendAsync(requestMessage);
-                var apiResponse = new ApiResponse
-                {
-                    StatusCode = response.StatusCode,
-                    IsSuccess = response.IsSuccessStatusCode
-                };
-
-                if (response.IsSuccessStatusCode)
-                {
-                    apiResponse.Content = await response.Content.ReadAsStringAsync();
-                }
-                else
-                {
-                    apiResponse.ErrorMessage = await response.Content.ReadAsStringAsync();
-                }
+                var apiResponse = await CallApiWithRetry(action, HttpMethod.Post, url, jsonContent);
 
                 return apiResponse;
-
 
             }
             catch (HttpRequestException e)
@@ -272,83 +292,11 @@ namespace ACECommerce
         public async Task<ApiResponse> GetContactAsync(string URL, string emailAddress)
         {
             string url = $"https://{URL}/contacts?filters[email]={Uri.EscapeDataString(emailAddress)}&include=contactLists";
-
-            var requestMessage = new HttpRequestMessage(HttpMethod.Get, url);
-
-            requestMessage.Headers.Add("MT-Request-Token", Guid.NewGuid().ToString());
-
-            try
-                {
-                    var apiResponse = new ApiResponse();
-                    for (int i = 0; i < _numRetries; i++)
-                    {
-                        var prefix = $"Attempt {i + 1} of {_numRetries}";
-                        HttpResponseMessage response = await _client.SendAsync(requestMessage);
-                        apiResponse = new ApiResponse
-                        {
-                            StatusCode = response.StatusCode,
-                            IsSuccess = response.IsSuccessStatusCode
-                        };
-
-                        if (response.IsSuccessStatusCode)
-                        {
-                            apiResponse.Content = await response.Content.ReadAsStringAsync();
-                            break; // no need to retry anymore 
-                        }
-                        else
-                        {
-                            apiResponse.ErrorMessage = await response.Content.ReadAsStringAsync();
-                            Program.WriteConsoleMessage($"{prefix} returned unsuccesful response {apiResponse.StatusCode} {apiResponse.ErrorMessage}", _dbConnectionString);
-                            Task.Delay(_retryDelay).Wait(); // Wait before the next try
-                        }
-                    }
-
-                    return apiResponse;
-
-                }
-                catch (HttpRequestException e)
-                {
-                    //Console.WriteLine($"Error: {e.Message}");
-                    Program.WriteConsoleMessage($"Error: {e.Message} getting contact with email {emailAddress}", _dbConnectionString);
-                    return null;
-                }
-        }
-
-        public async Task<ApiResponse> GetCustomerAsync(string URL, string connectionId, string emailAddress)
-        {
-            string url = $"https://{URL}/ecomCustomers?filters[connectionid]={connectionId}&filters[email]={Uri.EscapeDataString(emailAddress)}";
+            string action = "Get Contact";
 
             try
             {
-                var apiResponse = new ApiResponse();
-
-                for (int i = 0; i < _numRetries; i++)
-                {
-                    using (var requestMessage = new HttpRequestMessage(HttpMethod.Get, url))
-                    {
-                        requestMessage.Headers.Add("MT-Request-Token", Guid.NewGuid().ToString());
-
-                        var prefix = $"Attempt {i + 1} of {_numRetries}";
-                        HttpResponseMessage response = await _client.SendAsync(requestMessage);
-                        apiResponse = new ApiResponse
-                        {
-                            StatusCode = response.StatusCode,
-                            IsSuccess = response.IsSuccessStatusCode
-                        };
-
-                        if (response.IsSuccessStatusCode)
-                        {
-                            apiResponse.Content = await response.Content.ReadAsStringAsync();
-                            break; // no need to retry anymore 
-                        }
-                        else
-                        {
-                            apiResponse.ErrorMessage = await response.Content.ReadAsStringAsync();
-                            Program.WriteConsoleMessage($"{prefix} returned unsuccesful response {apiResponse.StatusCode} {apiResponse.ErrorMessage}", _dbConnectionString);
-                            Task.Delay(_retryDelay).Wait(); // Wait before the next try
-                        }
-                    }
-                }
+                var apiResponse = await CallApiWithRetry(action, HttpMethod.Get, url);
 
                 return apiResponse;
 
@@ -356,7 +304,28 @@ namespace ACECommerce
             catch (HttpRequestException e)
             {
                 //Console.WriteLine($"Error: {e.Message}");
-                Program.WriteConsoleMessage($"Error: {e.Message} getting ecomCustomer with email {emailAddress}", _dbConnectionString);
+                Program.WriteConsoleMessage($"Error: {e.Message} getting contact with email {emailAddress}", _dbConnectionString);
+                return null;
+            }
+        }
+
+
+        public async Task<ApiResponse> GetCustomerAsync(string URL, string connectionId, string emailAddress)
+        {
+            string url = $"https://{URL}/ecomCustomers?filters[connectionid]={connectionId}&filters[email]={Uri.EscapeDataString(emailAddress)}";
+            string action = "Get EcomCustomer";
+
+            try
+            {
+                var apiResponse = await CallApiWithRetry(action, HttpMethod.Get, url);
+
+                return apiResponse;
+
+            }
+            catch (HttpRequestException e)
+            {
+                //Console.WriteLine($"Error: {e.Message}");
+                Program.WriteConsoleMessage($"Error: {e.Message} {action} with email {emailAddress}", _dbConnectionString);
                 return null;
             }
         }
@@ -364,28 +333,11 @@ namespace ACECommerce
         public async Task<ApiResponse> GetOrderAsync(string URL, string connectionId, string externalId, string dbConnectionString)
         {
             string url = $"https://{URL}/ecomOrders?filters[connectionid]={connectionId}&filters[externalid]={Uri.EscapeDataString(externalId)}";
-
-            var requestMessage = new HttpRequestMessage(HttpMethod.Get, url);
-
-            requestMessage.Headers.Add("MT-Request-Token", Guid.NewGuid().ToString());
+            string action = "Get EComOrder";
 
             try
             {
-                HttpResponseMessage response = await _client.SendAsync(requestMessage);
-                var apiResponse = new ApiResponse
-                {
-                    StatusCode = response.StatusCode,
-                    IsSuccess = response.IsSuccessStatusCode
-                };
-
-                if (response.IsSuccessStatusCode)
-                {
-                    apiResponse.Content = await response.Content.ReadAsStringAsync();
-                }
-                else
-                {
-                    apiResponse.ErrorMessage = await response.Content.ReadAsStringAsync();
-                }
+                var apiResponse = await CallApiWithRetry(action, HttpMethod.Get, url);
 
                 return apiResponse;
 
@@ -398,35 +350,15 @@ namespace ACECommerce
             }
         }
 
-        public async Task<ApiResponse> PostCustomerOrOrdersAsync(string URL, string json, string path, string dbConnectionString)
+        public async Task<ApiResponse> PostCustomerOrOrdersAsync(string action, string URL, string json, string path, string dbConnectionString)
         {
             var url = $"https://{URL}/{path}";
             var jsonContent = new StringContent(json, Encoding.UTF8, "application/json");
-            var requestMessage = new HttpRequestMessage(HttpMethod.Post, url);
-            requestMessage.Content = jsonContent;
-
-            requestMessage.Headers.Add("MT-Request-Token", Guid.NewGuid().ToString());
-
             try
             {
-                HttpResponseMessage response = await _client.SendAsync(requestMessage);
-                var apiResponse = new ApiResponse
-                {
-                    StatusCode = response.StatusCode,
-                    IsSuccess = response.IsSuccessStatusCode
-                };
-
-                if (response.IsSuccessStatusCode)
-                {
-                    apiResponse.Content = await response.Content.ReadAsStringAsync();
-                }
-                else
-                {
-                    apiResponse.ErrorMessage = await response.Content.ReadAsStringAsync();
-                }
+                var apiResponse = await CallApiWithRetry(action, HttpMethod.Post, url, jsonContent);
 
                 return apiResponse;
-
 
             }
             catch (HttpRequestException e)
@@ -441,32 +373,13 @@ namespace ACECommerce
         public async Task<ApiResponse> UpdateOrdersAsync(string URL, string json, string path, string existingOrderId, string dbConnectionString)
         {
             var url = $"https://{URL}/{path}/{existingOrderId}";
+            string action = "Update EComOrder";
             var jsonContent = new StringContent(json, Encoding.UTF8, "application/json");
-            var requestMessage = new HttpRequestMessage(HttpMethod.Put, url);
-            requestMessage.Content = jsonContent;
-
-            requestMessage.Headers.Add("MT-Request-Token", Guid.NewGuid().ToString());
-
             try
             {
-                HttpResponseMessage response = await _client.SendAsync(requestMessage);
-                var apiResponse = new ApiResponse
-                {
-                    StatusCode = response.StatusCode,
-                    IsSuccess = response.IsSuccessStatusCode
-                };
-
-                if (response.IsSuccessStatusCode)
-                {
-                    apiResponse.Content = await response.Content.ReadAsStringAsync();
-                }
-                else
-                {
-                    apiResponse.ErrorMessage = await response.Content.ReadAsStringAsync();
-                }
+                var apiResponse = await CallApiWithRetry(action, HttpMethod.Put, url, jsonContent);
 
                 return apiResponse;
-
 
             }
             catch (HttpRequestException e)
@@ -905,7 +818,7 @@ namespace ACECommerce
 
                                                         "DELETE FROM tbl_MKTECommOrderInfoLog WHERE LogDate < NOW()- interval <ConfirmationTrimInterval> day; ";
 
-//TODO: Retries on all api calls !
+
                 using (MySqlConnection emlConnection = new MySqlConnection(databaseSettings.MT_EMLConnectionString))
                 {
                     try
@@ -1156,82 +1069,87 @@ namespace ACECommerce
                                 .Select(row => $"'{row[0].ToString()}'")
                             );
 
-                            queryTicketsSelectString = queryTicketsSelectString.Replace("<Order_Id_List>", orderIdListString);
-
-                            using (OracleConnection pvConnection = new OracleConnection(databaseSettings.PVConnectionString))
+                            if (!String.IsNullOrEmpty(orderIdListString))
                             {
+                                queryTicketsSelectString = queryTicketsSelectString.Replace("<Order_Id_List>", orderIdListString);
 
-
-                                try
+                                using (OracleConnection pvConnection = new OracleConnection(databaseSettings.PVConnectionString))
                                 {
-
-                                    if (loggingSettings.Debug) WriteConsoleMessage("Executing tickets query in PV for ActiveCampaign updates", databaseSettings.MT_EMLConnectionString);
-
-
-                                    OracleDataAdapter daTickets = new OracleDataAdapter(
-                                        //loggingSettings.TransactionIdOverride ? queryOrdersSelectWithOverrideString.Replace("<TRANSACTIONLIST>", loggingSettings.TransactionList) :
-                                        queryTicketsSelectString.Replace("<Order_Id_List>", orderIdListString),
-                                            pvConnection);
-
-                                    DataSet dsTickets = new DataSet();
-                                    daTickets.SelectCommand.CommandTimeout = 600;
-                                    daTickets.Fill(dsTickets);
-
-                                    MySqlCommand cmdInsertTicket = new MySqlCommand();
-                                    cmdInsertTicket.Connection = emlConnection;
-                                    string ticketValuesString = string.Empty;
-
-                                    if (loggingSettings.Debug) WriteConsoleMessage("Inserting tickets into tbl_MKTECommTicketDetail", databaseSettings.MT_EMLConnectionString);
-                                    foreach (DataRow r in dsTickets.Tables[0].Rows)
+                                    try
                                     {
 
-                                        if (loggingSettings.Debug) WriteConsoleMessage("Inserting TransactionId to TicketDetails " + r["TRANSACTION_ID"].ToString(), databaseSettings.MT_EMLConnectionString);
+                                        if (loggingSettings.Debug) WriteConsoleMessage("Executing tickets query in PV for ActiveCampaign updates", databaseSettings.MT_EMLConnectionString);
 
-                                        ticketValuesString =
-                                            r["TRANSACTION_ID"] + ", " +
-                                            r["EVENT_ID"] + ", " +
-                                            "'" + r["EVENT_CODE"] + "', " +
-                                            "STR_TO_DATE('" + (r["EVENT_DATE_TIME"]) + "', '%m/%d/%Y %h:%i:%s %p'), " +
-                                            r["Supplier_Id"] + ", " +
-                                            r["PATRON_ACCOUNT_ID"] + ", " +
-                                            r["ORDER_ID"] + ", " +
-                                            "'" + r["PRICE_SCALE"] + "', " +
-                                            "'" + r["BUYER_TYPE_CODE"] + "', " +
-                                            "'" + r["BUYER_TYPE_DESC"].ToString().Replace("'", "''") + "', " +
-                                            r["BUYER_TYPE_GROUP_ID"] + ", " +
-                                            (Convert.IsDBNull(r["REPORT_BUYER_TYPE_GROUP_ID"]) ? "0" : r["REPORT_BUYER_TYPE_GROUP_ID"].ToString()) + "," +
-                                            "'" + r["DISPLAY_INDICATOR"] + "', " +
-                                            r["TAX_EXEMPT"] + ", " +
-                                            r["TICKET_ID"] + ", " +
-                                            "'" + r["PAYMENT_STATUS_CODE"] + "', " +
-                                            r["TICKET_PRICE"] + ", " +
-                                            r["CONV_FEE"] + ", " +
-                                            r["SALES_TAX"] + ", " +
-                                            r["INC_SALES_TAX"] + ", " +
-                                            r["GRATUITY"] + ", " +
-                                            r["ALLOCATION"] + ", " +
-                                            r["TICKET_COUNT"];
+                                        OracleDataAdapter daTickets = new OracleDataAdapter(
+                                            //loggingSettings.TransactionIdOverride ? queryOrdersSelectWithOverrideString.Replace("<TRANSACTIONLIST>", loggingSettings.TransactionList) :
+                                            queryTicketsSelectString.Replace("<Order_Id_List>", orderIdListString),
+                                                pvConnection);
 
-                                        cmdInsertTicket.CommandText = queryTicketsInsertString.Replace("<VALUES>", ticketValuesString);
-                                        // temp log every query to find other null problem
-                                        //if (loggingSettings.Debug) WriteConsoleMessage(cmdInsertTicket.CommandText);
+                                        DataSet dsTickets = new DataSet();
+                                        daTickets.SelectCommand.CommandTimeout = 600;
+                                        daTickets.Fill(dsTickets);
 
-                                        cmdInsertTicket.ExecuteNonQuery();
+                                        MySqlCommand cmdInsertTicket = new MySqlCommand();
+                                        cmdInsertTicket.Connection = emlConnection;
+                                        string ticketValuesString = string.Empty;
+
+                                        if (loggingSettings.Debug) WriteConsoleMessage("Inserting tickets into tbl_MKTECommTicketDetail", databaseSettings.MT_EMLConnectionString);
+                                        foreach (DataRow r in dsTickets.Tables[0].Rows)
+                                        {
+
+                                            if (loggingSettings.Debug) WriteConsoleMessage("Inserting TransactionId to TicketDetails " + r["TRANSACTION_ID"].ToString(), databaseSettings.MT_EMLConnectionString);
+
+                                            ticketValuesString =
+                                                r["TRANSACTION_ID"] + ", " +
+                                                r["EVENT_ID"] + ", " +
+                                                "'" + r["EVENT_CODE"] + "', " +
+                                                "STR_TO_DATE('" + (r["EVENT_DATE_TIME"]) + "', '%m/%d/%Y %h:%i:%s %p'), " +
+                                                r["Supplier_Id"] + ", " +
+                                                r["PATRON_ACCOUNT_ID"] + ", " +
+                                                r["ORDER_ID"] + ", " +
+                                                "'" + r["PRICE_SCALE"] + "', " +
+                                                "'" + r["BUYER_TYPE_CODE"] + "', " +
+                                                "'" + r["BUYER_TYPE_DESC"].ToString().Replace("'", "''") + "', " +
+                                                r["BUYER_TYPE_GROUP_ID"] + ", " +
+                                                (Convert.IsDBNull(r["REPORT_BUYER_TYPE_GROUP_ID"]) ? "0" : r["REPORT_BUYER_TYPE_GROUP_ID"].ToString()) + "," +
+                                                "'" + r["DISPLAY_INDICATOR"] + "', " +
+                                                r["TAX_EXEMPT"] + ", " +
+                                                r["TICKET_ID"] + ", " +
+                                                "'" + r["PAYMENT_STATUS_CODE"] + "', " +
+                                                r["TICKET_PRICE"] + ", " +
+                                                r["CONV_FEE"] + ", " +
+                                                r["SALES_TAX"] + ", " +
+                                                r["INC_SALES_TAX"] + ", " +
+                                                r["GRATUITY"] + ", " +
+                                                r["ALLOCATION"] + ", " +
+                                                r["TICKET_COUNT"];
+
+                                            cmdInsertTicket.CommandText = queryTicketsInsertString.Replace("<VALUES>", ticketValuesString);
+                                            // temp log every query to find other null problem
+                                            // if (loggingSettings.Debug) WriteConsoleMessage(cmdInsertTicket.CommandText, databaseSettings.MT_EMLConnectionString);
+
+                                            cmdInsertTicket.ExecuteNonQuery();
+
+                                        }
+                                        if (loggingSettings.Debug) WriteConsoleMessage("Finished inserting tickets into tbl_MKTECommTicketDetail", databaseSettings.MT_EMLConnectionString);
 
                                     }
-                                    if (loggingSettings.Debug) WriteConsoleMessage("Finished inserting tickets into tbl_MKTECommTicketDetail", databaseSettings.MT_EMLConnectionString);
-
+                                    catch (Exception ex)
+                                    {
+                                        WriteConsoleMessage($"Error inserting ticket details {ex.Message}", databaseSettings.MT_EMLConnectionString);
+                                    }
                                 }
-                                catch (Exception ex)
-                                {
-                                    WriteConsoleMessage($"Error inserting ticket details {ex.Message}", databaseSettings.MT_EMLConnectionString);
-                                }
+                            }
+                            else
+                            {
+                                WriteConsoleMessage($"No order ids found with tickets", databaseSettings.MT_EMLConnectionString);
                             }
                         }
                         else
                         {
                             if (loggingSettings.Debug) WriteConsoleMessage("Skipped getting Tickets for Orders due to runtime settings.  Check appSettings.json if this is unintended.", databaseSettings.MT_EMLConnectionString);
                         }
+                        
 
                         // build customer and order info for EComm API
                         // Order info has either 0 or 1 coupons - keep this together with header info
@@ -1310,7 +1228,7 @@ namespace ACECommerce
                                         string json = JsonSerializer.Serialize(wrapper);
                                         WriteConsoleMessage($"Creating new ECom customer {json}", databaseSettings.MT_EMLConnectionString);
 
-                                        ApiResponse createResponse = await apiClient.PostCustomerOrOrdersAsync(url, json, "ecomCustomers", databaseSettings.MT_EMLConnectionString); // path is case sensitive
+                                        ApiResponse createResponse = await apiClient.PostCustomerOrOrdersAsync("Create EComCustomer", url, json, "ecomCustomers", databaseSettings.MT_EMLConnectionString); // path is case sensitive
                                         if (createResponse.IsSuccess)
                                         {
 
@@ -1484,7 +1402,7 @@ namespace ACECommerce
                                         {
                                             WriteConsoleMessage($"Creating new order - POST Order JSON: {orderJson}", databaseSettings.MT_EMLConnectionString);
 
-                                            ApiResponse orderResponse = await apiClient.PostCustomerOrOrdersAsync(url, orderJson, "ecomOrders", databaseSettings.MT_EMLConnectionString); // path is case sensitive
+                                            ApiResponse orderResponse = await apiClient.PostCustomerOrOrdersAsync("Create EComOrder", url, orderJson, "ecomOrders", databaseSettings.MT_EMLConnectionString); // path is case sensitive
                                             if (orderResponse.IsSuccess)
                                             {
                                                 // Parse the string into a JsonDocument
