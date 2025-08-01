@@ -205,18 +205,32 @@ namespace ACECommerce
     public class APIClient
     {
         private readonly HttpClient _client;
+        public ActiveCampaignAPISettings _acApiSettings;
+        public TimeSpan _retryDelay = TimeSpan.Zero;
+        public int _numRetries;
+        private string _dbConnectionString;
 
-        public APIClient(string apiToken)
+        public APIClient(ActiveCampaignAPISettings acApiSettings, string dbConnectionString)
         {
+            _acApiSettings = acApiSettings;
+            _dbConnectionString = dbConnectionString;
             _client = new HttpClient();
             _client.DefaultRequestHeaders.Add("User-Agent", "mt-activecampaign-agent/7.39.0");
             _client.DefaultRequestHeaders.Add("Accept", "application/json");
             _client.DefaultRequestHeaders.Add("Connection", "keep-alive");
-            _client.DefaultRequestHeaders.Add("Api-Token", apiToken);
+            _client.DefaultRequestHeaders.Add("Api-Token", _acApiSettings.ApiKey);
             _client.DefaultRequestHeaders.Add("Host", "medievaltimes.api-us1.com");
+
+            _numRetries = 1;  // always try at least once
+            if (_acApiSettings.UseRetry == "1")
+            {
+                _numRetries = Convert.ToInt32(_acApiSettings.MaxRetries);
+                TimeSpan.TryParse(_acApiSettings.RetryWaitTime ?? String.Empty, out _retryDelay);
+                // _acApiSettings.RetryWaitTime = "00:00:3" = 3 seconds
+            }
         }
 
-        public async Task<ApiResponse> PostRecordAsync(string URL, string json, string path, string dbConnectionString)
+        public async Task<ApiResponse> PostRecordAsync(string URL, string json, string path)
         {
             var url = $"https://{URL}/{path}";
             var jsonContent = new StringContent(json, Encoding.UTF8, "application/json");
@@ -251,11 +265,11 @@ namespace ACECommerce
             {
 
                 //Console.WriteLine($"Error: {e.Message}");
-                Program.WriteConsoleMessage($"Error: {e.Message} posting to {URL}", dbConnectionString);
+                Program.WriteConsoleMessage($"Error: {e.Message} posting to {URL}", _dbConnectionString);
                 return null;
             }
         }
-        public async Task<ApiResponse> GetContactAsync(string URL, string emailAddress, string dbConnectionString)
+        public async Task<ApiResponse> GetContactAsync(string URL, string emailAddress)
         {
             string url = $"https://{URL}/contacts?filters[email]={Uri.EscapeDataString(emailAddress)}&include=contactLists";
 
@@ -264,58 +278,76 @@ namespace ACECommerce
             requestMessage.Headers.Add("MT-Request-Token", Guid.NewGuid().ToString());
 
             try
-            {
-                HttpResponseMessage response = await _client.SendAsync(requestMessage);
-                var apiResponse = new ApiResponse
                 {
-                    StatusCode = response.StatusCode,
-                    IsSuccess = response.IsSuccessStatusCode
-                };
+                    var apiResponse = new ApiResponse();
+                    for (int i = 0; i < _numRetries; i++)
+                    {
+                        var prefix = $"Attempt {i + 1} of {_numRetries}";
+                        HttpResponseMessage response = await _client.SendAsync(requestMessage);
+                        apiResponse = new ApiResponse
+                        {
+                            StatusCode = response.StatusCode,
+                            IsSuccess = response.IsSuccessStatusCode
+                        };
 
-                if (response.IsSuccessStatusCode)
-                {
-                    apiResponse.Content = await response.Content.ReadAsStringAsync();
+                        if (response.IsSuccessStatusCode)
+                        {
+                            apiResponse.Content = await response.Content.ReadAsStringAsync();
+                            break; // no need to retry anymore 
+                        }
+                        else
+                        {
+                            apiResponse.ErrorMessage = await response.Content.ReadAsStringAsync();
+                            Program.WriteConsoleMessage($"{prefix} returned unsuccesful response {apiResponse.StatusCode} {apiResponse.ErrorMessage}", _dbConnectionString);
+                            Task.Delay(_retryDelay).Wait(); // Wait before the next try
+                        }
+                    }
+
+                    return apiResponse;
+
                 }
-                else
+                catch (HttpRequestException e)
                 {
-                    apiResponse.ErrorMessage = await response.Content.ReadAsStringAsync();
+                    //Console.WriteLine($"Error: {e.Message}");
+                    Program.WriteConsoleMessage($"Error: {e.Message} getting contact with email {emailAddress}", _dbConnectionString);
+                    return null;
                 }
-
-                return apiResponse;
-
-            }
-            catch (HttpRequestException e)
-            {
-                //Console.WriteLine($"Error: {e.Message}");
-                Program.WriteConsoleMessage($"Error: {e.Message} getting contact with email {emailAddress}", dbConnectionString);
-                return null;
-            }
         }
 
-        public async Task<ApiResponse> GetCustomerAsync(string URL, string connectionId, string emailAddress, string dbConnectionString)
+        public async Task<ApiResponse> GetCustomerAsync(string URL, string connectionId, string emailAddress)
         {
             string url = $"https://{URL}/ecomCustomers?filters[connectionid]={connectionId}&filters[email]={Uri.EscapeDataString(emailAddress)}";
 
-            var requestMessage = new HttpRequestMessage(HttpMethod.Get, url);
-
-            requestMessage.Headers.Add("MT-Request-Token", Guid.NewGuid().ToString());
-
             try
             {
-                HttpResponseMessage response = await _client.SendAsync(requestMessage);
-                var apiResponse = new ApiResponse
-                {
-                    StatusCode = response.StatusCode,
-                    IsSuccess = response.IsSuccessStatusCode
-                };
+                var apiResponse = new ApiResponse();
 
-                if (response.IsSuccessStatusCode)
+                for (int i = 0; i < _numRetries; i++)
                 {
-                    apiResponse.Content = await response.Content.ReadAsStringAsync();
-                }
-                else
-                {
-                    apiResponse.ErrorMessage = await response.Content.ReadAsStringAsync();
+                    using (var requestMessage = new HttpRequestMessage(HttpMethod.Get, url))
+                    {
+                        requestMessage.Headers.Add("MT-Request-Token", Guid.NewGuid().ToString());
+
+                        var prefix = $"Attempt {i + 1} of {_numRetries}";
+                        HttpResponseMessage response = await _client.SendAsync(requestMessage);
+                        apiResponse = new ApiResponse
+                        {
+                            StatusCode = response.StatusCode,
+                            IsSuccess = response.IsSuccessStatusCode
+                        };
+
+                        if (response.IsSuccessStatusCode)
+                        {
+                            apiResponse.Content = await response.Content.ReadAsStringAsync();
+                            break; // no need to retry anymore 
+                        }
+                        else
+                        {
+                            apiResponse.ErrorMessage = await response.Content.ReadAsStringAsync();
+                            Program.WriteConsoleMessage($"{prefix} returned unsuccesful response {apiResponse.StatusCode} {apiResponse.ErrorMessage}", _dbConnectionString);
+                            Task.Delay(_retryDelay).Wait(); // Wait before the next try
+                        }
+                    }
                 }
 
                 return apiResponse;
@@ -324,7 +356,7 @@ namespace ACECommerce
             catch (HttpRequestException e)
             {
                 //Console.WriteLine($"Error: {e.Message}");
-                Program.WriteConsoleMessage($"Error: {e.Message} getting ecomCustomer with email {emailAddress}", dbConnectionString);
+                Program.WriteConsoleMessage($"Error: {e.Message} getting ecomCustomer with email {emailAddress}", _dbConnectionString);
                 return null;
             }
         }
@@ -460,6 +492,10 @@ namespace ACECommerce
         public string ApiKey { get; set; }
         public string URL { get; set; }
         public string ConnectionId { get; set; }
+        public string UseRetry { get; set; }
+        public string MaxRetries { get; set; }
+        public string RetryWaitTime { get; set; }
+
     }
     public class DatabaseSettings
     {
@@ -604,6 +640,9 @@ namespace ACECommerce
                 WriteConsoleMessage($"DatabaseSettings.ConnectionString={databaseSettings.PVConnectionString}", databaseSettings.MT_EMLConnectionString);
                 WriteConsoleMessage($"ActiveCampaignAPISettings.ApiKey={acAPISettings.ApiKey}", databaseSettings.MT_EMLConnectionString);
                 WriteConsoleMessage($"ActiveCampaignAPISettings.PostURL={acAPISettings.URL}", databaseSettings.MT_EMLConnectionString);
+                WriteConsoleMessage($"ActiveCampaignAPISettings.UseRety={acAPISettings.UseRetry}", databaseSettings.MT_EMLConnectionString);
+                WriteConsoleMessage($"ActiveCampaignAPISettings.MaxRetries={acAPISettings.MaxRetries}", databaseSettings.MT_EMLConnectionString);
+                WriteConsoleMessage($"ActiveCampaignAPISettings.RetryWaitTime={acAPISettings.RetryWaitTime}", databaseSettings.MT_EMLConnectionString);
                 WriteConsoleMessage($"LogLevel={loggingSettings.LogLevel}", databaseSettings.MT_EMLConnectionString);
                 WriteConsoleMessage($"Debug={loggingSettings.Debug}", databaseSettings.MT_EMLConnectionString);
                 WriteConsoleMessage($"UseDebugEmail={loggingSettings.UseDebugEmail}", databaseSettings.MT_EMLConnectionString);
@@ -996,13 +1035,13 @@ namespace ACECommerce
                                     {
                                         if (loggingSettings.Debug) WriteConsoleMessage($"Checking existence and status of {r["Order_Email"].ToString()} in ActiveCampaign", databaseSettings.MT_EMLConnectionString);
 
-                                        var apiClient = new APIClient(acAPISettings.ApiKey);
+                                        var apiClient = new APIClient(acAPISettings, databaseSettings.MT_EMLConnectionString);
                                         string url = acAPISettings.URL;
                                         string emailAddress = r["Order_Email"].ToString();
 
                                         try
                                         {
-                                            ApiResponse response = await apiClient.GetContactAsync(url, emailAddress, databaseSettings.MT_EMLConnectionString);
+                                            ApiResponse response = await apiClient.GetContactAsync(url, emailAddress);
 
                                             if (response.IsSuccess)
                                             {
@@ -1104,8 +1143,6 @@ namespace ACECommerce
                         // E = error 
 
 
-                        // TODO: add/update similar statuses for ticketDetail table
-
                         if (!loggingSettings.ProcessTicketsTableOnly)
                         {
                             // get order id list
@@ -1187,7 +1224,7 @@ namespace ACECommerce
                                 }
                                 catch (Exception ex)
                                 {
-                                    WriteConsoleMessage(ex.Message, databaseSettings.MT_EMLConnectionString);
+                                    WriteConsoleMessage($"Error inserting ticket details {ex.Message}", databaseSettings.MT_EMLConnectionString);
                                 }
                             }
                         }
@@ -1206,7 +1243,7 @@ namespace ACECommerce
                         {
                             try
                             {
-                                var apiClient = new APIClient(acAPISettings.ApiKey);
+                                var apiClient = new APIClient(acAPISettings, databaseSettings.MT_EMLConnectionString);
                                 string url = acAPISettings.URL;
 
                                 if (loggingSettings.Debug) WriteConsoleMessage($"Checking existence of {r["Order_Email"].ToString()} as an Ecomm Customer", databaseSettings.MT_EMLConnectionString);
@@ -1224,7 +1261,7 @@ namespace ACECommerce
 
                                 try
                                 {
-                                    ApiResponse response = await apiClient.GetCustomerAsync(url, connectionId, emailAddress, databaseSettings.MT_EMLConnectionString);
+                                    ApiResponse response = await apiClient.GetCustomerAsync(url, connectionId, emailAddress);
 
                                     if (response.IsSuccess)
                                     {
@@ -1245,6 +1282,7 @@ namespace ACECommerce
                                     else
                                     {
                                         var responseContent = $"API error status: {response.StatusCode} {response.Content} {response.ErrorMessage}";
+                                        WriteConsoleMessage(responseContent, databaseSettings.MT_EMLConnectionString);
                                         MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "E").Replace("<Response_Object>", responseContent).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
                                         daOrderUpdateData.ExecuteNonQuery();
                                         continue; // go to next row, do not process order if customer lookup failed
