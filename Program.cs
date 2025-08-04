@@ -330,7 +330,7 @@ namespace ACECommerce
             }
         }
 
-        public async Task<ApiResponse> GetOrderAsync(string URL, string connectionId, string externalId, string dbConnectionString)
+        public async Task<ApiResponse> GetOrderAsync(string URL, string connectionId, string externalId)
         {
             string url = $"https://{URL}/ecomOrders?filters[connectionid]={connectionId}&filters[externalid]={Uri.EscapeDataString(externalId)}";
             string action = "Get EComOrder";
@@ -345,12 +345,12 @@ namespace ACECommerce
             catch (HttpRequestException e)
             {
                 //Console.WriteLine($"Error: {e.Message}");
-                Program.WriteConsoleMessage($"Error: {e.Message} getting Order with externalId {externalId}", dbConnectionString);
+                Program.WriteConsoleMessage($"Error: {e.Message} getting Order with externalId {externalId}", _dbConnectionString);
                 return null;
             }
         }
 
-        public async Task<ApiResponse> PostCustomerOrOrdersAsync(string action, string URL, string json, string path, string dbConnectionString)
+        public async Task<ApiResponse> PostCustomerOrOrdersAsync(string action, string URL, string json, string path)
         {
             var url = $"https://{URL}/{path}";
             var jsonContent = new StringContent(json, Encoding.UTF8, "application/json");
@@ -365,12 +365,12 @@ namespace ACECommerce
             {
 
                 //Console.WriteLine($"Error: {e.Message}");
-                Program.WriteConsoleMessage($"Error: {e.Message} posting to {URL}", dbConnectionString);
+                Program.WriteConsoleMessage($"Error: {e.Message} posting to {URL}", _dbConnectionString);
                 return null;
             }
         }
 
-        public async Task<ApiResponse> UpdateOrdersAsync(string URL, string json, string path, string existingOrderId, string dbConnectionString)
+        public async Task<ApiResponse> UpdateOrdersAsync(string URL, string json, string path, string existingOrderId)
         {
             var url = $"https://{URL}/{path}/{existingOrderId}";
             string action = "Update EComOrder";
@@ -386,7 +386,7 @@ namespace ACECommerce
             {
 
                 //Console.WriteLine($"Error: {e.Message}");
-                Program.WriteConsoleMessage($"Error: {e.Message} updating order {existingOrderId}", dbConnectionString);
+                Program.WriteConsoleMessage($"Error: {e.Message} updating order {existingOrderId}", _dbConnectionString);
                 return null;
             }
         }
@@ -869,7 +869,7 @@ namespace ACECommerce
                                             pvConnection);
 
                                     DataSet dsOrders = new DataSet();
-                                    daOrders.SelectCommand.CommandTimeout = 300;
+                                    daOrders.SelectCommand.CommandTimeout = 600;
                                     daOrders.Fill(dsOrders);
 
                                     MySqlCommand cmdInsertOrder = new MySqlCommand();
@@ -1149,7 +1149,7 @@ namespace ACECommerce
                         {
                             if (loggingSettings.Debug) WriteConsoleMessage("Skipped getting Tickets for Orders due to runtime settings.  Check appSettings.json if this is unintended.", databaseSettings.MT_EMLConnectionString);
                         }
-                        
+
 
                         // build customer and order info for EComm API
                         // Order info has either 0 or 1 coupons - keep this together with header info
@@ -1228,7 +1228,7 @@ namespace ACECommerce
                                         string json = JsonSerializer.Serialize(wrapper);
                                         WriteConsoleMessage($"Creating new ECom customer {json}", databaseSettings.MT_EMLConnectionString);
 
-                                        ApiResponse createResponse = await apiClient.PostCustomerOrOrdersAsync("Create EComCustomer", url, json, "ecomCustomers", databaseSettings.MT_EMLConnectionString); // path is case sensitive
+                                        ApiResponse createResponse = await apiClient.PostCustomerOrOrdersAsync("Create EComCustomer", url, json, "ecomCustomers"); // path is case sensitive
                                         if (createResponse.IsSuccess)
                                         {
 
@@ -1271,7 +1271,7 @@ namespace ACECommerce
                                     // see if external order id already exists
                                     var existingOrderId = "-1";
                                     var processOrderToEcomm = false;
-                                    ApiResponse checkOrderResponse = await apiClient.GetOrderAsync(url, connectionId, orderId, databaseSettings.MT_EMLConnectionString);
+                                    ApiResponse checkOrderResponse = await apiClient.GetOrderAsync(url, connectionId, orderId);
                                     if (checkOrderResponse.IsSuccess)
                                     {
                                         // Parse the string into a JsonDocument
@@ -1402,7 +1402,7 @@ namespace ACECommerce
                                         {
                                             WriteConsoleMessage($"Creating new order - POST Order JSON: {orderJson}", databaseSettings.MT_EMLConnectionString);
 
-                                            ApiResponse orderResponse = await apiClient.PostCustomerOrOrdersAsync("Create EComOrder", url, orderJson, "ecomOrders", databaseSettings.MT_EMLConnectionString); // path is case sensitive
+                                            ApiResponse orderResponse = await apiClient.PostCustomerOrOrdersAsync("Create EComOrder", url, orderJson, "ecomOrders"); // path is case sensitive
                                             if (orderResponse.IsSuccess)
                                             {
                                                 // Parse the string into a JsonDocument
@@ -1449,7 +1449,7 @@ namespace ACECommerce
                                         {
                                             WriteConsoleMessage($"Updating existing order {existingOrderId} - PUT Order JSON: {orderJson}", databaseSettings.MT_EMLConnectionString);
 
-                                            ApiResponse updateResponse = await apiClient.UpdateOrdersAsync(url, orderJson, "ecomOrders", existingOrderId, databaseSettings.MT_EMLConnectionString); // path is case sensitive
+                                            ApiResponse updateResponse = await apiClient.UpdateOrdersAsync(url, orderJson, "ecomOrders", existingOrderId); // path is case sensitive
                                             if (updateResponse.IsSuccess)
                                             {
                                                 // Parse the string into a JsonDocument
