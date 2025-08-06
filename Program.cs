@@ -638,7 +638,7 @@ namespace ACECommerce
                 string queryTicketOrders = @"select o.order_id, o.transactionid, o.order_email, o.Attending_Patron_Account_id, o.coupon, 
                         max(o.Tickets_Value) as TicketsValue, max(o.UpSells_Value) as UpSellsValue, sum(t.SALES_TAX) as SalesTax, max(o.Order_Date) as OrderDate, max(o.Insert_Dtm) as InsertDtm, max(o.last_updated_dtm) as LastUpdatedDtm
                         from tbl_MKTECommTicketDetail t
-                        inner join tbl_MKTECommOrderInfo o on t.order_id = o.order_id
+                        inner join tbl_MKTECommOrderInfo o on t.order_id = o.order_id and t.transaction_id = o.transactionid
                         where o.order_update_status = 'P'
                         group by o.order_id, o.transactionid, o.order_email, o.Attending_Patron_Account_id, o.coupon
                         order by o.order_id, o.transactionid, o.order_email, o.Attending_Patron_Account_id, o.coupon";
@@ -648,7 +648,7 @@ namespace ACECommerce
                 string queryTicketDetails = @"select t.buyer_type_code, t.buyer_type_desc, t.buyer_type_group_id, t.ticket_price,
                         SUM(t.ticket_count) as TicketCount, MAX(t.ticket_price) as TicketPrice
                         from tbl_MKTECommTicketDetail t
-                        where Order_Id = <Order_Id>
+                        where Order_Id = <Order_Id> and Transaction_id = <Transaction_Id>
                         group by t.buyer_type_code, t.buyer_type_desc, t.buyer_type_group_id, t.ticket_price";
 
                 string queryOrdersSelectString = @"SELECT MAX(a.TRANSACTION_ID) as MAX_TRANSACTION_ID,  MAX(a.LAST_UPDATED_DATE) as LAST_UPDATED_DATE, b.ORDER_ID, d.EMAIL, 
@@ -1323,7 +1323,7 @@ namespace ACECommerce
                                         // Get tickets details for the order
                                         // Each product on the order comes from ticket buyer_type_code
                                         var orderProducts = new List<OrderProduct>();
-                                        var orderTicketDetails = queryTicketDetails.Replace("<Order_Id>", orderId);
+                                        var orderTicketDetails = queryTicketDetails.Replace("<Order_Id>", orderId).Replace("<Transaction_Id>", currentTransactionId);
                                         MySqlDataAdapter daApiTicketList = new MySqlDataAdapter(orderTicketDetails, emlConnection);
                                         DataSet dsApiTicketList = new DataSet();
                                         daApiTicketList.Fill(dsApiTicketList);
