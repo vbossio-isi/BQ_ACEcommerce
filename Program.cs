@@ -869,7 +869,7 @@ namespace ACECommerce
                                             pvConnection);
 
                                     DataSet dsOrders = new DataSet();
-                                    daOrders.SelectCommand.CommandTimeout = 600;
+                                    daOrders.SelectCommand.CommandTimeout = 900;
                                     daOrders.Fill(dsOrders);
 
                                     MySqlCommand cmdInsertOrder = new MySqlCommand();
@@ -1086,7 +1086,7 @@ namespace ACECommerce
                                                 pvConnection);
 
                                         DataSet dsTickets = new DataSet();
-                                        daTickets.SelectCommand.CommandTimeout = 600;
+                                        daTickets.SelectCommand.CommandTimeout = 900;
                                         daTickets.Fill(dsTickets);
 
                                         MySqlCommand cmdInsertTicket = new MySqlCommand();
