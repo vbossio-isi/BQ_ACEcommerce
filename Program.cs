@@ -632,26 +632,32 @@ namespace ACECommerce
                                                     t.TRANSACTION_ID, 
                                                     t.TICKET_ID";
 
+                string queryTicketsArchive = @"INSERT INTO tbl_MKTECommTicketDetailArchive (ARCHIVED_DATE_TIME, EVENT_ID, EVENT_CODE, EVENT_DATE_TIME, SUPPLIER_ID, PATRON_ACCOUNT_ID, ORDER_ID, PRICE_SCALE, BUYER_TYPE_CODE, BUYER_TYPE_DESC, BUYER_TYPE_GROUP_ID, REPORT_BUYER_TYPE_GROUP_ID, DISPLAY_INDICATOR, TAX_EXEMPT, TICKET_ID, TRANSACTION_ID, PAYMENT_STATUS_CODE, TICKET_PRICE, CONV_FEE, SALES_TAX, GRATUITY, ALLOCATION, INC_SALES_TAX, TICKET_COUNT, Ticket_Update_Status, Ticket_Updated_Dtm, Response_Object)
+                                        SELECT NOW(), EVENT_ID, EVENT_CODE, EVENT_DATE_TIME, SUPPLIER_ID, PATRON_ACCOUNT_ID, ORDER_ID, PRICE_SCALE, BUYER_TYPE_CODE, BUYER_TYPE_DESC, BUYER_TYPE_GROUP_ID, REPORT_BUYER_TYPE_GROUP_ID, DISPLAY_INDICATOR, TAX_EXEMPT, TICKET_ID, TRANSACTION_ID, PAYMENT_STATUS_CODE, TICKET_PRICE, CONV_FEE, SALES_TAX, GRATUITY, ALLOCATION, INC_SALES_TAX, TICKET_COUNT, Ticket_Update_Status, Ticket_Updated_Dtm, Response_Object FROM tbl_MKTECommTicketDetail
+                                        ;
+                                        TRUNCATE TABLE tbl_MKTECommTicketDetail";
+
                 // first query to get orders header info
                 // IMPORTANT: Use order table for order_id and transactionid, otherwise transactions get broken out differently
                 // only get orders that have tickets, max() is used on order columns because there should only be one order per grouping
-                string queryTicketOrders = @"select o.order_id, o.transactionid, o.order_email, o.Attending_Patron_Account_id, o.coupon, 
+                string queryTicketOrders = @"select o.order_id, o.order_email, o.Attending_Patron_Account_id, o.coupon, 
+                        max(o.transactionid) as transactionid,
                         max(o.Tickets_Value) as TicketsValue, max(o.UpSells_Value) as UpSellsValue, sum(t.SALES_TAX) as SalesTax, max(o.Order_Date) as OrderDate, max(o.Insert_Dtm) as InsertDtm, max(o.last_updated_dtm) as LastUpdatedDtm
                         from tbl_MKTECommTicketDetail t
-                        inner join tbl_MKTECommOrderInfo o on t.order_id = o.order_id and t.transaction_id = o.transactionid
+                        inner join tbl_MKTECommOrderInfo o on t.order_id = o.order_id
                         where o.order_update_status = 'P'
-                        group by o.order_id, o.transactionid, o.order_email, o.Attending_Patron_Account_id, o.coupon
-                        order by o.order_id, o.transactionid, o.order_email, o.Attending_Patron_Account_id, o.coupon";
+                        group by o.order_id, o.order_email, o.Attending_Patron_Account_id, o.coupon
+                        order by o.order_id, o.order_email, o.Attending_Patron_Account_id, o.coupon";
 //having t.order_id in (42761910,42761811,)";
 
                 // second query runs for each order to get product list
                 string queryTicketDetails = @"select t.buyer_type_code, t.buyer_type_desc, t.buyer_type_group_id, t.ticket_price,
                         SUM(t.ticket_count) as TicketCount, MAX(t.ticket_price) as TicketPrice
                         from tbl_MKTECommTicketDetail t
-                        where Order_Id = <Order_Id> and Transaction_id = <Transaction_Id>
+                        where Order_Id = <Order_Id>
                         group by t.buyer_type_code, t.buyer_type_desc, t.buyer_type_group_id, t.ticket_price";
 
-                string queryOrdersSelectString = @"SELECT MAX(a.TRANSACTION_ID) as MAX_TRANSACTION_ID,  MAX(a.LAST_UPDATED_DATE) as LAST_UPDATED_DATE, b.ORDER_ID, d.EMAIL, 
+                string queryOrdersSelectPart1 = @"SELECT MAX(a.TRANSACTION_ID) as MAX_TRANSACTION_ID,  MAX(a.LAST_UPDATED_DATE) as LAST_UPDATED_DATE, b.ORDER_ID, d.EMAIL, 
                                                             d.ATTENDING_PATRON_ACCOUNT_ID,  
                                                             dm.DELIVERY_METHOD_CODE, o.SUPPLIER_ID, 'N' as CELEBRATING, 
                                                             MAX(CASE WHEN p.PRICE_SCALE_CODE <> 'NONADM' THEN CONCAT(p.PUBLIC_DESCRIPTION, CASE WHEN p.PUBLIC_DESCRIPTION <> 'General Admission' THEN ' Upgrade' ELSE '' END)  ELSE NULL END) AS PACKAGE_TYPE,
@@ -673,12 +679,18 @@ namespace ACECommerce
                                                             ec.EVENT_CATEGORY_CODE as EVENT_TYPE,
                                                             ag.DESCRIPTION as Agency
                                                 FROM	
-                                                (SELECT ORDER_ID, ORDER_LINE_ITEM_ID, TRANSACTION_ID, EVENT_ID FROM Order_Line_Item WHERE ORDER_ID IN 
-                                                    (SELECT ORDER_ID FROM Order_Line_Item WHERE Transaction_Id IN 
-                                                        (SELECT TRANSACTION_ID FROM TRANSACTION  WHERE LAST_UPDATED_DATE + (5/24/60) > to_timestamp('<Last_Updated_Dtm>', 'MM/DD/YYYY HH:MI:SS AM')) 
-                                                    )
-                                                ) b
-                                                INNER JOIN  TRANSACTION a
+                                                (SELECT ORDER_ID, ORDER_LINE_ITEM_ID, TRANSACTION_ID, EVENT_ID FROM Order_Line_Item WHERE ORDER_ID IN ";
+                string queryOrdersSelectPart2All = @"   (SELECT ORDER_ID FROM Order_Line_Item WHERE Transaction_Id IN 
+                                                            (SELECT TRANSACTION_ID FROM TRANSACTION  WHERE LAST_UPDATED_DATE + (5/24/60) > to_timestamp('<Last_Updated_Dtm>', 'MM/DD/YYYY HH:MI:SS AM')) 
+                                                        )
+                                                    ) b
+                                                    ";
+                string queryOrdersSelectPart2Override = @"   (SELECT ORDER_ID FROM Order_Line_Item WHERE Transaction_Id IN (<TRANSACTIONLIST>)
+                                                        )
+                                                    ) b
+                                                    ";
+
+                string queryOrdersSelectPart3 = @" INNER JOIN  TRANSACTION a
                                                 ON b.TRANSACTION_ID = a.TRANSACTION_ID
                                                 INNER JOIN  EVENT e 
                                                 ON          b.EVENT_ID = e.EVENT_ID AND 
@@ -717,61 +729,9 @@ namespace ACECommerce
                                                             ec.EVENT_CATEGORY_CODE,
                                                             ag.DESCRIPTION";
 
-               
+                string queryOrdersSelectString = queryOrdersSelectPart1 + queryOrdersSelectPart2All + queryOrdersSelectPart3;
 
-                string queryOrdersSelectWithOverrideString = @"SELECT MAX(a.TRANSACTION_ID) as MAX_TRANSACTION_ID, MAX(a.LAST_UPDATED_DATE) as LAST_UPDATED_DATE, b.ORDER_ID, d.EMAIL,  
-                                                            d.ATTENDING_PATRON_ACCOUNT_ID, 
-                                                            dm.DELIVERY_METHOD_CODE, o.SUPPLIER_ID, 'N' as CELEBRATING, MAX(CASE WHEN p.PRICE_SCALE_CODE <> 'NONADM' THEN CONCAT(p.PUBLIC_DESCRIPTION,CASE WHEN p.PUBLIC_DESCRIPTION <> 'General Admission' THEN ' Upgrade' ELSE '' END)  ELSE NULL END) AS PACKAGE_TYPE,
-                                                            SUM(CASE WHEN (bt.DESCRIPTION NOT LIKE ('%Child%') AND p.PRICE_SCALE_CODE <> 'NONADM') THEN 1 ELSE 0 END) AS ADULT_TICKETS,
-                                                            SUM(CASE WHEN (bt.DESCRIPTION LIKE ('%Child%') AND p.PRICE_SCALE_CODE <> 'NONADM')THEN 1 ELSE 0 END) AS CHILD_TICKETS,
-                                                            SUM(CASE WHEN (bt.DISPLAY_INDICATOR = 'A' AND p.PRICE_SCALE_CODE IN ('GA','ROYAL','CELEB','KINGS','QUEENS')) THEN PRICE ELSE 0.00 END) + 
-                                                                SUM(CASE WHEN (bt.DISPLAY_INDICATOR = 'C' AND p.PRICE_SCALE_CODE IN ('GA','ROYAL','CELEB','KINGS','QUEENS')) THEN PRICE ELSE 0.00 END) AS TICKET_VALUE,
-                                                            '' as COUPON,
-                                                            0.00 as PACKAGE_VALUE,
-                                                            SUM(CASE WHEN p.PRICE_SCALE_CODE = 'NONADM' AND bt.DISPLAY_INDICATOR <> 'T' THEN PRICE ELSE 0.00 END) AS UPSELLS_VALUE, 
-                                                            '' as UPSELLS_DATA,
-                                                            o.ORDER_DATE,
-                                                            e.EVENT_DATE,
-                                                            CASE WHEN ac.ACCOUNT_TYPE_CODE = 'IND' THEN 'IND' ELSE act.PATRON_ACCOUNT_TYPE_CODE END AS GUEST_TYPE,
-                                                            ec.EVENT_CATEGORY_CODE as EVENT_TYPE,
-                                                            ag.DESCRIPTION as Agency
-                                                FROM		(SELECT TRANSACTION_ID, LAST_UPDATED_DATE FROM TRANSACTION WHERE TRANSACTION_ID IN (<TRANSACTIONLIST>)) a    
-                                                INNER JOIN  Order_Line_Item b   
-                                                ON          a.transaction_id = b.TRANSACTION_ID  
-                                                INNER JOIN  EVENT e 
-                                                ON          b.EVENT_ID = e.EVENT_ID AND 
-                                                            b.EVENT_ID NOT IN (SELECT EVENT_ID FROM Event WHERE EVENT_CODE like '%GIFTCERT%' OR EVENT_CODE like '%BULK%') 
-                                                INNER JOIN  EVENT_CATEGORY ec
-                                                ON          e.EVENT_CATEGORY_ID = ec.EVENT_CATEGORY_ID
-                                                INNER JOIN  PATRON_ORDER o 
-                                                ON          b.ORDER_ID = o.ORDER_ID 
-                                                INNER JOIN  AGENCY ag
-                                                ON          o.CREATED_BY_AGENCY_ID = ag.AGENCY_ID
-                                                INNER JOIN  PATRON_ACCOUNT act 
-                                                ON          o.FINANCIAL_PATRON_ACCOUNT_ID = act.PATRON_ACCOUNT_ID 
-                                                INNER JOIN	PATRON_ACCOUNT_TYPE ac
-                                                ON				act.PATRON_ACCOUNT_TYPE_CODE = ac.PATRON_ACCOUNT_TYPE_CODE  
-                                                INNER JOIN  Ticket t   
-                                                ON          b.ORDER_LINE_ITEM_ID = t.ORDER_LINE_ITEM_ID AND   
-                                                            t.REMOVE_ORDER_LINE_ITEM_ID IS NULL 
-                                                INNER JOIN	PRICE_SCALE p
-                                                ON			p.PRICE_SCALE_ID = t.PRICE_SCALE_ID
-                                                INNER JOIN	BUYER_TYPE bt
-                                                ON			t.BUYER_TYPE_ID = bt.BUYER_TYPE_ID
-                                                INNER JOIN  Ticket_Delivery td   
-                                                ON			td.TICKET_ID = t.TICKET_ID   
-                                                AND			td.REMOVE_TRANSACTION_ID IS NULL    
-                                                INNER JOIN  Delivery d   
-                                                ON			d.DELIVERY_ID = td.DELIVERY_ID   
-                                                AND			d.DELIVERY_STATUS_CODE <> 'C'   
-                                                INNER JOIN	(SELECT * FROM delivery_method WHERE DELIVERY_TYPE_CODE = 'ETH') dm   
-                                                ON			dm.DELIVERY_METHOD_ID = d.DELIVERY_METHOD_ID   
-                                                GROUP BY    b.ORDER_ID, o.SUPPLIER_ID, d.EMAIL, d.ATTENDING_PATRON_ACCOUNT_ID, dm.DELIVERY_METHOD_CODE, -- p.PRICE_SCALE_CODE, 
-                                                            CASE WHEN ac.ACCOUNT_TYPE_CODE = 'IND' THEN 'IND' ELSE act.PATRON_ACCOUNT_TYPE_CODE END, 
-                                                            o.ORDER_DATE,
-                                                            e.EVENT_DATE,
-                                                            ec.EVENT_CATEGORY_CODE,
-                                                            ag.DESCRIPTION";
+                string queryOrdersSelectWithOverrideString = queryOrdersSelectPart1 + queryOrdersSelectPart2Override + queryOrdersSelectPart3;
 
                 string queryOrdersVerifyString = "SELECT COUNT(*) as PreviousOrderCount FROM tbl_MKTECommOrderInfo WHERE TransactionId = <VALUE> AND Last_Updated_Dtm BETWEEN DATE_SUB(STR_TO_DATE('<Last_Updated_Dtm>', '%m/%d/%Y %h:%i:%s %p'), INTERVAL 1 SECOND) AND " +
                                                 "DATE_ADD(STR_TO_DATE('<Last_Updated_Dtm>', '%m/%d/%Y %h:%i:%s %p'), INTERVAL 1 SECOND)";
@@ -879,11 +839,22 @@ namespace ACECommerce
                                     if (loggingSettings.Debug) WriteConsoleMessage("Inserting orders into tbl_MKTECommOrderInfo", databaseSettings.MT_EMLConnectionString);
                                     foreach (DataRow r in dsOrders.Tables[0].Rows)
                                     {
-                                        MySqlDataAdapter daVerifyOrder = new MySqlDataAdapter(queryOrdersVerifyString.Replace("<VALUE>", r["MAX_TRANSACTION_ID"].ToString()).Replace("<Last_Updated_Dtm>", r["LAST_UPDATED_DATE"].ToString()), emlConnection);
-                                        DataSet dsVerifyOrder = new DataSet();
-                                        daVerifyOrder.Fill(dsVerifyOrder);
-                                        DataRow r2 = dsVerifyOrder.Tables[0].Rows[0];
-                                        if (0 == int.Parse(r2["PreviousOrderCount"].ToString()))
+                                        // allow order to be re-processed if overriding transaction id list
+                                        var bProcessOrder = true;
+                                        if (!loggingSettings.TransactionIdOverride)
+                                        {
+                                            bProcessOrder = false;
+                                            MySqlDataAdapter daVerifyOrder = new MySqlDataAdapter(queryOrdersVerifyString.Replace("<VALUE>", r["MAX_TRANSACTION_ID"].ToString()).Replace("<Last_Updated_Dtm>", r["LAST_UPDATED_DATE"].ToString()), emlConnection);
+                                            DataSet dsVerifyOrder = new DataSet();
+                                            daVerifyOrder.Fill(dsVerifyOrder);
+                                            DataRow r2 = dsVerifyOrder.Tables[0].Rows[0];
+                                            if (0 == int.Parse(r2["PreviousOrderCount"].ToString()))
+                                            {
+                                                bProcessOrder = true;
+                                            }
+                                        }
+
+                                        if (bProcessOrder)
                                         {
                                             if (loggingSettings.Debug) WriteConsoleMessage("Inserting TransactionId " + r["MAX_TRANSACTION_ID"].ToString(), databaseSettings.MT_EMLConnectionString);
 
@@ -1058,6 +1029,10 @@ namespace ACECommerce
 
                         if (!loggingSettings.ProcessTicketsTableOnly)
                         {
+                            // archive the current MySQL ticket detail table and truncate
+                            MySqlCommand cmdArchive = new MySqlCommand(queryTicketsArchive, emlConnection);
+                            cmdArchive.ExecuteNonQuery();
+
                             // get order id list
                             MySqlDataAdapter daOrderIdList = new MySqlDataAdapter(queryOrderIdsListString, emlConnection);
                             DataSet dsOrderIdList = new DataSet();
