@@ -632,8 +632,8 @@ namespace ACECommerce
                                                     t.TRANSACTION_ID, 
                                                     t.TICKET_ID";
 
-                string queryTicketsArchive = @"INSERT INTO tbl_MKTECommTicketDetailArchive (ARCHIVED_DATE_TIME, EVENT_ID, EVENT_CODE, EVENT_DATE_TIME, SUPPLIER_ID, PATRON_ACCOUNT_ID, ORDER_ID, PRICE_SCALE, BUYER_TYPE_CODE, BUYER_TYPE_DESC, BUYER_TYPE_GROUP_ID, REPORT_BUYER_TYPE_GROUP_ID, DISPLAY_INDICATOR, TAX_EXEMPT, TICKET_ID, TRANSACTION_ID, PAYMENT_STATUS_CODE, TICKET_PRICE, CONV_FEE, SALES_TAX, GRATUITY, ALLOCATION, INC_SALES_TAX, TICKET_COUNT, Ticket_Update_Status, Ticket_Updated_Dtm, Response_Object)
-                                        SELECT NOW(), EVENT_ID, EVENT_CODE, EVENT_DATE_TIME, SUPPLIER_ID, PATRON_ACCOUNT_ID, ORDER_ID, PRICE_SCALE, BUYER_TYPE_CODE, BUYER_TYPE_DESC, BUYER_TYPE_GROUP_ID, REPORT_BUYER_TYPE_GROUP_ID, DISPLAY_INDICATOR, TAX_EXEMPT, TICKET_ID, TRANSACTION_ID, PAYMENT_STATUS_CODE, TICKET_PRICE, CONV_FEE, SALES_TAX, GRATUITY, ALLOCATION, INC_SALES_TAX, TICKET_COUNT, Ticket_Update_Status, Ticket_Updated_Dtm, Response_Object FROM tbl_MKTECommTicketDetail
+                string queryTicketsArchive = @"INSERT INTO tbl_MKTECommTicketDetailArchive (ARCHIVED_DATE_TIME, EVENT_ID, EVENT_CODE, EVENT_DATE_TIME, SUPPLIER_ID, PATRON_ACCOUNT_ID, ORDER_ID, PRICE_SCALE, BUYER_TYPE_CODE, BUYER_TYPE_DESC, BUYER_TYPE_GROUP_ID, REPORT_BUYER_TYPE_GROUP_ID, DISPLAY_INDICATOR, TAX_EXEMPT, TICKET_ID, TRANSACTION_ID, PAYMENT_STATUS_CODE, TICKET_PRICE, CONV_FEE, SALES_TAX, GRATUITY, ALLOCATION, INC_SALES_TAX, TICKET_COUNT, Ticket_Update_Status, Ticket_Updated_Dtm, Response_Object, Insert_Dtm)
+                                        SELECT NOW(), EVENT_ID, EVENT_CODE, EVENT_DATE_TIME, SUPPLIER_ID, PATRON_ACCOUNT_ID, ORDER_ID, PRICE_SCALE, BUYER_TYPE_CODE, BUYER_TYPE_DESC, BUYER_TYPE_GROUP_ID, REPORT_BUYER_TYPE_GROUP_ID, DISPLAY_INDICATOR, TAX_EXEMPT, TICKET_ID, TRANSACTION_ID, PAYMENT_STATUS_CODE, TICKET_PRICE, CONV_FEE, SALES_TAX, GRATUITY, ALLOCATION, INC_SALES_TAX, TICKET_COUNT, Ticket_Update_Status, Ticket_Updated_Dtm, Response_Object, Insert_Dtm FROM tbl_MKTECommTicketDetail
                                         ;
                                         TRUNCATE TABLE tbl_MKTECommTicketDetail";
 
@@ -642,6 +642,7 @@ namespace ACECommerce
                 // only get orders that have tickets, max() is used on order columns because there should only be one order per grouping
                 string queryTicketOrders = @"select o.order_id, o.order_email, o.Attending_Patron_Account_id, o.coupon, 
                         max(o.transactionid) as transactionid,
+                        sum(t.ticket_price) as TicketDetailTotalPrice,
                         max(o.Tickets_Value) as TicketsValue, max(o.UpSells_Value) as UpSellsValue, sum(t.SALES_TAX) as SalesTax, max(o.Order_Date) as OrderDate, max(o.Insert_Dtm) as InsertDtm, max(o.last_updated_dtm) as LastUpdatedDtm
                         from tbl_MKTECommTicketDetail t
                         inner join tbl_MKTECommOrderInfo o on t.order_id = o.order_id
@@ -770,9 +771,7 @@ namespace ACECommerce
 
                 string queryOrderACDataString = "UPDATE tbl_MKTECommOrderInfo SET AC_Exists ='<AC_Exists>', AC_ID = <AC_ID>, AC_Active_List = '<AC_Active_List>' WHERE TransactionId = <MaxTransactionId>";
 
-                string queryRecordsMaintenanceString = "DELETE t FROM tbl_MKTECommTicketDetail t " +
-                                                        " INNER JOIN tbl_MKTECommOrderInfo o ON t.ORDER_ID = o.ORDER_ID " +
-                                                        " WHERE o.Last_Updated_Dtm < NOW()- interval <ConfirmationTrimInterval> day; " +
+                string queryRecordsMaintenanceString = "DELETE FROM tbl_MKTECommTicketDetailArchive WHERE Archived_Date_Time < NOW()- interval <ConfirmationTrimInterval> day; " +
 
                                                         "DELETE FROM tbl_MKTECommOrderInfo WHERE Last_Updated_Dtm < NOW()- interval <ConfirmationTrimInterval> day; " +
 
@@ -1347,7 +1346,7 @@ namespace ACECommerce
                                                 ExternalCreatedDate = createdDate,
                                                 ExternalUpdatedDate = updatedDate,
                                                 Currency = "USD",
-                                                TotalPrice = (int)(((decimal)r["TicketsValue"] + (decimal)r["UpSellsValue"] + (decimal)r["SalesTax"]) * 100),
+                                                TotalPrice = (int)(((decimal)r["TicketDetailTotalPrice"] + (decimal)r["SalesTax"]) * 100),
                                                 ShippingAmount = 0,
                                                 TaxAmount = (int)((decimal)r["SalesTax"] * 100),
                                                 DiscountAmount = 0,
