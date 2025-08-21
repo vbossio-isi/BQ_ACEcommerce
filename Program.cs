@@ -6,9 +6,9 @@ using System.Text;
 using System.Data;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
-//using Oracle.ManagedDataAccess.Client;
+using Oracle.ManagedDataAccess.Client;
 //using MySql.Data;
-//using MySql.Data.MySqlClient;
+using MySql.Data.MySqlClient;
 using Microsoft.Data.SqlClient;
 
 
@@ -494,23 +494,38 @@ namespace BQ_ACECommerce
             return false;
         }
 
-        public static void WriteConsoleMessage(string msg, string mySQLconnectionString)
+        public static void WriteConsoleMessage(string msg, string sqlConnectionString)
         {
             WriteConsoleMessage(msg);
-/*
-            using (MySqlConnection emlConnection = new MySqlConnection(mySQLconnectionString))
+            
+            using (SqlConnection emlConnection = new SqlConnection(sqlConnectionString))
             {
                 emlConnection.Open();
-                // logic below corrects it so that msg values that contain single quotes still work
-                using (MySqlCommand cmdWriteLog = new MySqlCommand("INSERT INTO tbl_MKTECommOrderInfoLog(LogData) VALUES (@msg)", emlConnection))
+
+                // Use parameterized query to safely handle single quotes and avoid SQL injection
+                using (SqlCommand cmdWriteLog = new SqlCommand(
+                    "INSERT INTO tbl_MKTECommOrderInfoLog(LogData) VALUES (@msg)", 
+                    emlConnection))
                 {
                     cmdWriteLog.Parameters.AddWithValue("@msg", msg);
                     cmdWriteLog.ExecuteNonQuery();
                 }
-                // MySqlCommand cmdWriteLog = new MySqlCommand("INSERT INTO tbl_MKTECommOrderInfoLog(LogData) VALUES ('" + msg + "')", emlConnection);
-                // cmdWriteLog.ExecuteNonQuery();
             }
-*/
+
+/*
+                                    using (MySqlConnection emlConnection = new MySqlConnection(mySQLconnectionString))
+                                    {
+                                        emlConnection.Open();
+                                        // logic below corrects it so that msg values that contain single quotes still work
+                                        using (MySqlCommand cmdWriteLog = new MySqlCommand("INSERT INTO tbl_MKTECommOrderInfoLog(LogData) VALUES (@msg)", emlConnection))
+                                        {
+                                            cmdWriteLog.Parameters.AddWithValue("@msg", msg);
+                                            cmdWriteLog.ExecuteNonQuery();
+                                        }
+                                        // MySqlCommand cmdWriteLog = new MySqlCommand("INSERT INTO tbl_MKTECommOrderInfoLog(LogData) VALUES ('" + msg + "')", emlConnection);
+                                        // cmdWriteLog.ExecuteNonQuery();
+                                    }
+                        */
         }
 
         private static void WriteConsoleMessage(string msg)
@@ -555,7 +570,7 @@ namespace BQ_ACECommerce
 
             string connString = root["SqlConnectionString"];
 
-
+/* sql server test code
             // Use SqlClient
             using (SqlConnection conn = new SqlConnection(connString))
             {
@@ -585,31 +600,31 @@ namespace BQ_ACECommerce
                 }
 
             }
-/*
-            WriteConsoleMessage("Beginning Service", databaseSettings.MT_EMLConnectionString);
+*/
+            WriteConsoleMessage("Beginning Service", connString);
 
             if (loggingSettings.Debug)
             {
-                WriteConsoleMessage($"TransientFaultHandlingOptions.Enabled={transientFaultSettings.Enabled}", databaseSettings.MT_EMLConnectionString);
-                WriteConsoleMessage($"TransientFaultHandlingOptions.AutoRetryDelay={transientFaultSettings.AutoRetryDelay}", databaseSettings.MT_EMLConnectionString);
-                WriteConsoleMessage($"DatabaseSettings.ConnectionString={databaseSettings.PVConnectionString}", databaseSettings.MT_EMLConnectionString);
-                WriteConsoleMessage($"ActiveCampaignAPISettings.ApiKey={acAPISettings.ApiKey}", databaseSettings.MT_EMLConnectionString);
-                WriteConsoleMessage($"ActiveCampaignAPISettings.PostURL={acAPISettings.URL}", databaseSettings.MT_EMLConnectionString);
-                WriteConsoleMessage($"ActiveCampaignAPISettings.UseRety={acAPISettings.UseRetry}", databaseSettings.MT_EMLConnectionString);
-                WriteConsoleMessage($"ActiveCampaignAPISettings.MaxRetries={acAPISettings.MaxRetries}", databaseSettings.MT_EMLConnectionString);
-                WriteConsoleMessage($"ActiveCampaignAPISettings.RetryWaitTime={acAPISettings.RetryWaitTime}", databaseSettings.MT_EMLConnectionString);
-                WriteConsoleMessage($"LogLevel={loggingSettings.LogLevel}", databaseSettings.MT_EMLConnectionString);
-                WriteConsoleMessage($"Debug={loggingSettings.Debug}", databaseSettings.MT_EMLConnectionString);
-                WriteConsoleMessage($"UseDebugEmail={loggingSettings.UseDebugEmail}", databaseSettings.MT_EMLConnectionString);
-                WriteConsoleMessage($"DebugEmail={loggingSettings.DebugEmail}", databaseSettings.MT_EMLConnectionString);
-                WriteConsoleMessage($"DryRun={loggingSettings.DryRun}", databaseSettings.MT_EMLConnectionString);
-                WriteConsoleMessage($"OverrideTranDate={loggingSettings.OverrideTranDate}", databaseSettings.MT_EMLConnectionString);
-                WriteConsoleMessage($"OverrideTranDateValue={loggingSettings.OverrideTranDateValue}", databaseSettings.MT_EMLConnectionString);
-                WriteConsoleMessage($"ConfirmationTrimInterval={loggingSettings.ConfirmationTrimInterval}", databaseSettings.MT_EMLConnectionString);
-                WriteConsoleMessage($"ProcessOracleTableOnly={loggingSettings.ProcessOrdersTableOnly}", databaseSettings.MT_EMLConnectionString);
-                WriteConsoleMessage($"ProcessTicketsTableOnly={loggingSettings.ProcessTicketsTableOnly}", databaseSettings.MT_EMLConnectionString);
-                WriteConsoleMessage($"TransactionIdOverride={loggingSettings.TransactionIdOverride}", databaseSettings.MT_EMLConnectionString);
-                WriteConsoleMessage($"TransactionList={loggingSettings.TransactionList}", databaseSettings.MT_EMLConnectionString);
+                WriteConsoleMessage($"TransientFaultHandlingOptions.Enabled={transientFaultSettings.Enabled}", connString);
+                WriteConsoleMessage($"TransientFaultHandlingOptions.AutoRetryDelay={transientFaultSettings.AutoRetryDelay}", connString);
+                WriteConsoleMessage($"DatabaseSettings.ConnectionString={databaseSettings.PVConnectionString}", connString);
+                WriteConsoleMessage($"ActiveCampaignAPISettings.ApiKey={acAPISettings.ApiKey}", connString);
+                WriteConsoleMessage($"ActiveCampaignAPISettings.PostURL={acAPISettings.URL}", connString);
+                WriteConsoleMessage($"ActiveCampaignAPISettings.UseRety={acAPISettings.UseRetry}", connString);
+                WriteConsoleMessage($"ActiveCampaignAPISettings.MaxRetries={acAPISettings.MaxRetries}", connString);
+                WriteConsoleMessage($"ActiveCampaignAPISettings.RetryWaitTime={acAPISettings.RetryWaitTime}", connString);
+                WriteConsoleMessage($"LogLevel={loggingSettings.LogLevel}", connString);
+                WriteConsoleMessage($"Debug={loggingSettings.Debug}", connString);
+                WriteConsoleMessage($"UseDebugEmail={loggingSettings.UseDebugEmail}", connString);
+                WriteConsoleMessage($"DebugEmail={loggingSettings.DebugEmail}", connString);
+                WriteConsoleMessage($"DryRun={loggingSettings.DryRun}", connString);
+                WriteConsoleMessage($"OverrideTranDate={loggingSettings.OverrideTranDate}", connString);
+                WriteConsoleMessage($"OverrideTranDateValue={loggingSettings.OverrideTranDateValue}", connString);
+                WriteConsoleMessage($"ConfirmationTrimInterval={loggingSettings.ConfirmationTrimInterval}", connString);
+                WriteConsoleMessage($"ProcessOracleTableOnly={loggingSettings.ProcessOrdersTableOnly}", connString);
+                WriteConsoleMessage($"ProcessTicketsTableOnly={loggingSettings.ProcessTicketsTableOnly}", connString);
+                WriteConsoleMessage($"TransactionIdOverride={loggingSettings.TransactionIdOverride}", connString);
+                WriteConsoleMessage($"TransactionList={loggingSettings.TransactionList}", connString);
             }
 
             if (TimeToRun())
@@ -820,11 +835,11 @@ namespace BQ_ACECommerce
                                                         "DELETE FROM tbl_MKTECommOrderInfoLog WHERE LogDate < NOW()- interval <ConfirmationTrimInterval> day; ";
 
 
-                using (MySqlConnection emlConnection = new MySqlConnection(databaseSettings.MT_EMLConnectionString))
+                using (MySqlConnection emlConnection = new MySqlConnection(connString))
                 {
                     try
                     {
-                        if (loggingSettings.Debug) WriteConsoleMessage("Opening connection to EML", databaseSettings.MT_EMLConnectionString);
+                        if (loggingSettings.Debug) WriteConsoleMessage("Opening connection to EML", connString);
                         emlConnection.Open();
 
                         MySqlCommand cmdRecordsMaintenance = new MySqlCommand(queryRecordsMaintenanceString.Replace("<ConfirmationTrimInterval>", loggingSettings.ConfirmationTrimInterval), emlConnection);
@@ -861,7 +876,7 @@ namespace BQ_ACECommerce
                                     int totalRowcount = 0;
                                     string ordersString = string.Empty;
 
-                                    if (loggingSettings.Debug) WriteConsoleMessage("Executing orders query in PV for ActiveCampaign updates", databaseSettings.MT_EMLConnectionString);
+                                    if (loggingSettings.Debug) WriteConsoleMessage("Executing orders query in PV for ActiveCampaign updates", connString);
 
 
                                     OracleDataAdapter daOrders = new OracleDataAdapter(
@@ -877,7 +892,7 @@ namespace BQ_ACECommerce
                                     cmdInsertOrder.Connection = emlConnection;
                                     string orderValuesString = string.Empty;
 
-                                    if (loggingSettings.Debug) WriteConsoleMessage("Inserting orders into tbl_MKTECommOrderInfo", databaseSettings.MT_EMLConnectionString);
+                                    if (loggingSettings.Debug) WriteConsoleMessage("Inserting orders into tbl_MKTECommOrderInfo", connString);
                                     foreach (DataRow r in dsOrders.Tables[0].Rows)
                                     {
                                         // allow order to be re-processed if overriding transaction id list
@@ -897,7 +912,7 @@ namespace BQ_ACECommerce
 
                                         if (bProcessOrder)
                                         {
-                                            if (loggingSettings.Debug) WriteConsoleMessage("Inserting TransactionId " + r["MAX_TRANSACTION_ID"].ToString(), databaseSettings.MT_EMLConnectionString);
+                                            if (loggingSettings.Debug) WriteConsoleMessage("Inserting TransactionId " + r["MAX_TRANSACTION_ID"].ToString(), connString);
 
                                             orderValuesString =
                                                 r["MAX_TRANSACTION_ID"] + ", " +
@@ -927,24 +942,24 @@ namespace BQ_ACECommerce
                                         }
                                         else
                                         {
-                                            if (loggingSettings.Debug) WriteConsoleMessage($"Skipping TransactionId {r["MAX_TRANSACTION_ID"].ToString()} because it was already processed", databaseSettings.MT_EMLConnectionString);
+                                            if (loggingSettings.Debug) WriteConsoleMessage($"Skipping TransactionId {r["MAX_TRANSACTION_ID"].ToString()} because it was already processed", connString);
                                         }
                                     }
-                                    if (loggingSettings.Debug) WriteConsoleMessage("Finished inserting orders into tbl_MKTECommOrderInfo", databaseSettings.MT_EMLConnectionString);
+                                    if (loggingSettings.Debug) WriteConsoleMessage("Finished inserting orders into tbl_MKTECommOrderInfo", connString);
 
-                                    if (loggingSettings.Debug) WriteConsoleMessage("Update orders to skip if location not active", databaseSettings.MT_EMLConnectionString);
+                                    if (loggingSettings.Debug) WriteConsoleMessage("Update orders to skip if location not active", connString);
                                     MySqlCommand cmdUpdateOrdersToSkip = new MySqlCommand(queryUpdateOrdersToSkip, emlConnection);
                                     cmdUpdateOrdersToSkip.ExecuteNonQuery();
                                 }
                                 catch (Exception ex)
                                 {
-                                    WriteConsoleMessage(ex.Message, databaseSettings.MT_EMLConnectionString);
+                                    WriteConsoleMessage(ex.Message, connString);
                                 }
                             }
 
                             try
                             {
-                                if (loggingSettings.Debug) WriteConsoleMessage("Getting orders to process", databaseSettings.MT_EMLConnectionString);
+                                if (loggingSettings.Debug) WriteConsoleMessage("Getting orders to process", connString);
 
                                 MySqlDataAdapter daOrdersToProcess = new MySqlDataAdapter(queryOrdersToProcessString, emlConnection);
                                 DataSet dsOrdersToProcess = new DataSet();
@@ -958,9 +973,9 @@ namespace BQ_ACECommerce
 
                                     try
                                     {
-                                        if (loggingSettings.Debug) WriteConsoleMessage($"Checking existence and status of {r["Order_Email"].ToString()} in ActiveCampaign", databaseSettings.MT_EMLConnectionString);
+                                        if (loggingSettings.Debug) WriteConsoleMessage($"Checking existence and status of {r["Order_Email"].ToString()} in ActiveCampaign", connString);
 
-                                        var apiClient = new APIClient(acAPISettings, databaseSettings.MT_EMLConnectionString);
+                                        var apiClient = new APIClient(acAPISettings, connString);
                                         string url = acAPISettings.URL;
                                         string emailAddress = r["Order_Email"].ToString();
 
@@ -987,7 +1002,7 @@ namespace BQ_ACECommerce
                                                     if (listsWithStatusOne != null && listsWithStatusOne != string.Empty)
                                                     {
                                                         ac_id = contactWithLists.ContactLists.FirstOrDefault(cl => cl.Status == "1")?.Contact;
-                                                        if (loggingSettings.Debug) WriteConsoleMessage($"Found {r["Order_Email"].ToString()} in ActiveCampaign with Id = {ac_id} active on at least one list", databaseSettings.MT_EMLConnectionString);
+                                                        if (loggingSettings.Debug) WriteConsoleMessage($"Found {r["Order_Email"].ToString()} in ActiveCampaign with Id = {ac_id} active on at least one list", connString);
                                                         MySqlCommand daACData = new MySqlCommand(queryOrderACDataString.Replace("<AC_Exists>", "Y").Replace("<AC_ID>", ac_id).Replace("<AC_Active_List>", listsWithStatusOne).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
                                                         daACData.ExecuteNonQuery();
                                                         isActive = true;
@@ -995,7 +1010,7 @@ namespace BQ_ACECommerce
                                                     else
                                                     {
                                                         ac_id = contactWithLists.Contacts.FirstOrDefault()?.Id;
-                                                        if (loggingSettings.Debug) WriteConsoleMessage($"Found {r["Order_Email"].ToString()} in ActiveCampaign with Id = {ac_id} but no active lists", databaseSettings.MT_EMLConnectionString);
+                                                        if (loggingSettings.Debug) WriteConsoleMessage($"Found {r["Order_Email"].ToString()} in ActiveCampaign with Id = {ac_id} but no active lists", connString);
                                                         MySqlCommand daACData = new MySqlCommand(queryOrderACDataString.Replace("<AC_Exists>", "Y").Replace("<AC_ID>", ac_id).Replace("<Order_Update_Status>", "S").Replace("<AC_Active_List>", "").Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
                                                         daACData.ExecuteNonQuery();
                                                         isActive = false;
@@ -1017,7 +1032,7 @@ namespace BQ_ACECommerce
                                             else
                                             {
                                                 var responseContent = $"API error status: {response.StatusCode} {response.Content} {response.ErrorMessage}";
-                                                WriteConsoleMessage($"Could not get contact for transactionid {currentTransactionId}", databaseSettings.MT_EMLConnectionString);
+                                                WriteConsoleMessage($"Could not get contact for transactionid {currentTransactionId}", connString);
                                                 MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "E").Replace("<Response_Object>", responseContent).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
                                                 daOrderUpdateData.ExecuteNonQuery();
                                             }
@@ -1032,29 +1047,29 @@ namespace BQ_ACECommerce
                                                     daOrderUpdateData.ExecuteNonQuery();
                                                 }
                                             }
-                                            catch (Exception ex2) { WriteConsoleMessage($"We ignored an error within a catch block.  {ex2.Message}", databaseSettings.MT_EMLConnectionString); }
+                                            catch (Exception ex2) { WriteConsoleMessage($"We ignored an error within a catch block.  {ex2.Message}", connString); }
 
-                                            if (loggingSettings.Debug) WriteConsoleMessage($"An error occured while processing transaction ID {currentTransactionId}.  {ex.Message}", databaseSettings.MT_EMLConnectionString);
-                                            WriteConsoleMessage(ex.Message, databaseSettings.MT_EMLConnectionString);
+                                            if (loggingSettings.Debug) WriteConsoleMessage($"An error occured while processing transaction ID {currentTransactionId}.  {ex.Message}", connString);
+                                            WriteConsoleMessage(ex.Message, connString);
                                             isActive = false;
                                         }
                                     }
                                     catch (Exception ex)
                                     {
-                                        if (loggingSettings.Debug) WriteConsoleMessage("An error occured while constructing outgoing request for AC_ID.  See next record if an exception message is available.", databaseSettings.MT_EMLConnectionString);
-                                        WriteConsoleMessage(ex.Message, databaseSettings.MT_EMLConnectionString);
+                                        if (loggingSettings.Debug) WriteConsoleMessage("An error occured while constructing outgoing request for AC_ID.  See next record if an exception message is available.", connString);
+                                        WriteConsoleMessage(ex.Message, connString);
                                     }
                                 }
                             }
                             catch (Exception ex)
                             {
-                                WriteConsoleMessage(ex.Message, databaseSettings.MT_EMLConnectionString);
+                                WriteConsoleMessage(ex.Message, connString);
                             }
 
                         }
                         else
                         {
-                            if (loggingSettings.Debug) WriteConsoleMessage("Skipped checking PV for orders due to runtime settings.  Check appSettings.json if this is unintended.", databaseSettings.MT_EMLConnectionString);
+                            if (loggingSettings.Debug) WriteConsoleMessage("Skipped checking PV for orders due to runtime settings.  Check appSettings.json if this is unintended.", connString);
                         }
 
                         // at this point all order statuses have been applied:
@@ -1094,7 +1109,7 @@ namespace BQ_ACECommerce
                                     try
                                     {
 
-                                        if (loggingSettings.Debug) WriteConsoleMessage("Executing tickets query in PV for ActiveCampaign updates", databaseSettings.MT_EMLConnectionString);
+                                        if (loggingSettings.Debug) WriteConsoleMessage("Executing tickets query in PV for ActiveCampaign updates", connString);
 
                                         OracleDataAdapter daTickets = new OracleDataAdapter(
                                             //loggingSettings.TransactionIdOverride ? queryOrdersSelectWithOverrideString.Replace("<TRANSACTIONLIST>", loggingSettings.TransactionList) :
@@ -1109,11 +1124,11 @@ namespace BQ_ACECommerce
                                         cmdInsertTicket.Connection = emlConnection;
                                         string ticketValuesString = string.Empty;
 
-                                        if (loggingSettings.Debug) WriteConsoleMessage("Inserting tickets into tbl_MKTECommTicketDetail", databaseSettings.MT_EMLConnectionString);
+                                        if (loggingSettings.Debug) WriteConsoleMessage("Inserting tickets into tbl_MKTECommTicketDetail", connString);
                                         foreach (DataRow r in dsTickets.Tables[0].Rows)
                                         {
 
-                                            if (loggingSettings.Debug) WriteConsoleMessage("Inserting TransactionId to TicketDetails " + r["TRANSACTION_ID"].ToString(), databaseSettings.MT_EMLConnectionString);
+                                            if (loggingSettings.Debug) WriteConsoleMessage("Inserting TransactionId to TicketDetails " + r["TRANSACTION_ID"].ToString(), connString);
 
                                             ticketValuesString =
                                                 r["TRANSACTION_ID"] + ", " +
@@ -1142,28 +1157,28 @@ namespace BQ_ACECommerce
 
                                             cmdInsertTicket.CommandText = queryTicketsInsertString.Replace("<VALUES>", ticketValuesString);
                                             // temp log every query to find other null problem
-                                            // if (loggingSettings.Debug) WriteConsoleMessage(cmdInsertTicket.CommandText, databaseSettings.MT_EMLConnectionString);
+                                            // if (loggingSettings.Debug) WriteConsoleMessage(cmdInsertTicket.CommandText, connString);
 
                                             cmdInsertTicket.ExecuteNonQuery();
 
                                         }
-                                        if (loggingSettings.Debug) WriteConsoleMessage("Finished inserting tickets into tbl_MKTECommTicketDetail", databaseSettings.MT_EMLConnectionString);
+                                        if (loggingSettings.Debug) WriteConsoleMessage("Finished inserting tickets into tbl_MKTECommTicketDetail", connString);
 
                                     }
                                     catch (Exception ex)
                                     {
-                                        WriteConsoleMessage($"Error inserting ticket details {ex.Message}", databaseSettings.MT_EMLConnectionString);
+                                        WriteConsoleMessage($"Error inserting ticket details {ex.Message}", connString);
                                     }
                                 }
                             }
                             else
                             {
-                                WriteConsoleMessage($"No order ids found with tickets", databaseSettings.MT_EMLConnectionString);
+                                WriteConsoleMessage($"No order ids found with tickets", connString);
                             }
                         }
                         else
                         {
-                            if (loggingSettings.Debug) WriteConsoleMessage("Skipped getting Tickets for Orders due to runtime settings.  Check appSettings.json if this is unintended.", databaseSettings.MT_EMLConnectionString);
+                            if (loggingSettings.Debug) WriteConsoleMessage("Skipped getting Tickets for Orders due to runtime settings.  Check appSettings.json if this is unintended.", connString);
                         }
 
 
@@ -1177,10 +1192,10 @@ namespace BQ_ACECommerce
                         {
                             try
                             {
-                                var apiClient = new APIClient(acAPISettings, databaseSettings.MT_EMLConnectionString);
+                                var apiClient = new APIClient(acAPISettings, connString);
                                 string url = acAPISettings.URL;
 
-                                if (loggingSettings.Debug) WriteConsoleMessage($"Checking existence of {r["Order_Email"].ToString()} as an Ecomm Customer", databaseSettings.MT_EMLConnectionString);
+                                if (loggingSettings.Debug) WriteConsoleMessage($"Checking existence of {r["Order_Email"].ToString()} as an Ecomm Customer", connString);
 
                                 string currentTransactionId = r["transactionid"].ToString();
                                 string orderId = r["order_id"].ToString();
@@ -1216,7 +1231,7 @@ namespace BQ_ACECommerce
                                     else
                                     {
                                         var responseContent = $"API error status: {response.StatusCode} {response.Content} {response.ErrorMessage}";
-                                        WriteConsoleMessage(responseContent, databaseSettings.MT_EMLConnectionString);
+                                        WriteConsoleMessage(responseContent, connString);
                                         MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "E").Replace("<Response_Object>", responseContent).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
                                         daOrderUpdateData.ExecuteNonQuery();
                                         continue; // go to next row, do not process order if customer lookup failed
@@ -1242,7 +1257,7 @@ namespace BQ_ACECommerce
                                         // var options = new JsonSerializerOptions { WriteIndented = true };
                                         // string json = JsonSerializer.Serialize(wrapper, options);
                                         string json = JsonSerializer.Serialize(wrapper);
-                                        WriteConsoleMessage($"Creating new ECom customer {json}", databaseSettings.MT_EMLConnectionString);
+                                        WriteConsoleMessage($"Creating new ECom customer {json}", connString);
 
                                         ApiResponse createResponse = await apiClient.PostCustomerOrOrdersAsync("Create EComCustomer", url, json, "ecomCustomers"); // path is case sensitive
                                         if (createResponse.IsSuccess)
@@ -1261,7 +1276,7 @@ namespace BQ_ACECommerce
                                                     customerId = idElement.GetString();
                                                 }
                                             }
-                                            WriteConsoleMessage($"Customer id {customerId} created", databaseSettings.MT_EMLConnectionString);
+                                            WriteConsoleMessage($"Customer id {customerId} created", connString);
                                         }
                                         else
                                         {
@@ -1276,13 +1291,13 @@ namespace BQ_ACECommerce
                                     // double check that we have a valid customer id assigned
                                     if (string.IsNullOrEmpty(customerId))
                                     {
-                                        WriteConsoleMessage($"Customer id is blank for order {orderId}", databaseSettings.MT_EMLConnectionString);
+                                        WriteConsoleMessage($"Customer id is blank for order {orderId}", connString);
                                         MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "E").Replace("<Response_Object>", $"Customer id is blank for order {orderId}").Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
                                         daOrderUpdateData.ExecuteNonQuery();
                                         continue; // do not process if we don't have a valid customer
                                     }
 
-                                    WriteConsoleMessage($"Checking existence of order id {orderId} in Ecomm.", databaseSettings.MT_EMLConnectionString);
+                                    WriteConsoleMessage($"Checking existence of order id {orderId} in Ecomm.", connString);
 
                                     // see if external order id already exists
                                     var existingOrderId = "-1";
@@ -1302,14 +1317,14 @@ namespace BQ_ACECommerce
                                             {
                                                 processOrderToEcomm = true;
                                                 existingOrderId = orders[0].GetProperty("id").GetString();
-                                                WriteConsoleMessage($"ExternalOrderId {orderId} found with Ecom order id {existingOrderId}, order will be updated.", databaseSettings.MT_EMLConnectionString);
+                                                WriteConsoleMessage($"ExternalOrderId {orderId} found with Ecom order id {existingOrderId}, order will be updated.", connString);
 
                                                 MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdatePostTypeString.Replace("<Order_Post_Type>", "U").Replace("<Response_Object>", checkOrderResponse.Content.Replace("'", "''")).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
                                                 daOrderUpdateData.ExecuteNonQuery();
                                             }
                                             else
                                             {
-                                                WriteConsoleMessage($"Error: Returned ExternalId {returnedExternalId} does not match current externalId {orderId}", databaseSettings.MT_EMLConnectionString);
+                                                WriteConsoleMessage($"Error: Returned ExternalId {returnedExternalId} does not match current externalId {orderId}", connString);
                                                 MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "E").Replace("<Response_Object>", checkOrderResponse.Content.Replace("'", "''")).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
                                                 daOrderUpdateData.ExecuteNonQuery();
                                             }
@@ -1318,7 +1333,7 @@ namespace BQ_ACECommerce
                                         else
                                         {
                                             processOrderToEcomm = true;
-                                            WriteConsoleMessage($"External Id {orderId} not found, creating new.", databaseSettings.MT_EMLConnectionString);
+                                            WriteConsoleMessage($"External Id {orderId} not found, creating new.", connString);
                                             MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdatePostTypeString.Replace("<Order_Post_Type>", "I").Replace("<Response_Object>", checkOrderResponse.Content.Replace("'", "''")).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
                                             daOrderUpdateData.ExecuteNonQuery();
                                         }
@@ -1416,7 +1431,7 @@ namespace BQ_ACECommerce
 
                                         if (existingOrderId == "-1")
                                         {
-                                            WriteConsoleMessage($"Creating new order - POST Order JSON: {orderJson}", databaseSettings.MT_EMLConnectionString);
+                                            WriteConsoleMessage($"Creating new order - POST Order JSON: {orderJson}", connString);
 
                                             ApiResponse orderResponse = await apiClient.PostCustomerOrOrdersAsync("Create EComOrder", url, orderJson, "ecomOrders"); // path is case sensitive
                                             if (orderResponse.IsSuccess)
@@ -1432,14 +1447,14 @@ namespace BQ_ACECommerce
                                                     if (ecomOrder.TryGetProperty("id", out JsonElement idElement))
                                                     {
                                                         var newOrderId = idElement.GetString();
-                                                        WriteConsoleMessage($"Ecom order id {newOrderId} created with ExternalOrderId {orderId}", databaseSettings.MT_EMLConnectionString);
+                                                        WriteConsoleMessage($"Ecom order id {newOrderId} created with ExternalOrderId {orderId}", connString);
 
                                                         MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "Y").Replace("<Response_Object>", orderResponse.Content.Replace("'", "''")).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
                                                         daOrderUpdateData.ExecuteNonQuery();
                                                     }
                                                     else
                                                     {
-                                                        WriteConsoleMessage($"Could not get id property from {orderResponse.Content}", databaseSettings.MT_EMLConnectionString);
+                                                        WriteConsoleMessage($"Could not get id property from {orderResponse.Content}", connString);
                                                         MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "Z").Replace("<Response_Object>", orderResponse.Content.Replace("'", "''")).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
                                                         daOrderUpdateData.ExecuteNonQuery();
                                                     }
@@ -1447,7 +1462,7 @@ namespace BQ_ACECommerce
                                                 }
                                                 else
                                                 {
-                                                    WriteConsoleMessage($"Could not get ecomOrder property from {orderResponse.Content}", databaseSettings.MT_EMLConnectionString);
+                                                    WriteConsoleMessage($"Could not get ecomOrder property from {orderResponse.Content}", connString);
                                                     MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "Z").Replace("<Response_Object>", orderResponse.Content.Replace("'", "''")).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
                                                     daOrderUpdateData.ExecuteNonQuery();
                                                 }
@@ -1455,7 +1470,7 @@ namespace BQ_ACECommerce
                                             else
                                             {
                                                 var orderResponseContent = $"API error status: {orderResponse.StatusCode} {orderResponse.Content} {orderResponse.ErrorMessage}";
-                                                WriteConsoleMessage($"FAILED Order Post for ExternalOrderId: {orderId} Status: {orderResponse.StatusCode} ErrorMessage: {orderResponseContent}", databaseSettings.MT_EMLConnectionString);
+                                                WriteConsoleMessage($"FAILED Order Post for ExternalOrderId: {orderId} Status: {orderResponse.StatusCode} ErrorMessage: {orderResponseContent}", connString);
                                                 MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "E").Replace("<Response_Object>", orderResponseContent).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
                                                 daOrderUpdateData.ExecuteNonQuery();
 
@@ -1463,7 +1478,7 @@ namespace BQ_ACECommerce
                                         }
                                         else
                                         {
-                                            WriteConsoleMessage($"Updating existing order {existingOrderId} - PUT Order JSON: {orderJson}", databaseSettings.MT_EMLConnectionString);
+                                            WriteConsoleMessage($"Updating existing order {existingOrderId} - PUT Order JSON: {orderJson}", connString);
 
                                             ApiResponse updateResponse = await apiClient.UpdateOrdersAsync(url, orderJson, "ecomOrders", existingOrderId); // path is case sensitive
                                             if (updateResponse.IsSuccess)
@@ -1481,21 +1496,21 @@ namespace BQ_ACECommerce
                                                         var newOrderId = idElement.GetString();
                                                         if (newOrderId == existingOrderId)
                                                         {
-                                                            WriteConsoleMessage($"Ecom order id {newOrderId} updated for ExternalOrderId {orderId}", databaseSettings.MT_EMLConnectionString);
+                                                            WriteConsoleMessage($"Ecom order id {newOrderId} updated for ExternalOrderId {orderId}", connString);
 
                                                             MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "Y").Replace("<Response_Object>", updateResponse.Content.Replace("'", "''")).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
                                                             daOrderUpdateData.ExecuteNonQuery();
                                                         }
                                                         else
                                                         {
-                                                            WriteConsoleMessage($"Updated order id {newOrderId} does not match order we attempted to update {existingOrderId}", databaseSettings.MT_EMLConnectionString);
+                                                            WriteConsoleMessage($"Updated order id {newOrderId} does not match order we attempted to update {existingOrderId}", connString);
                                                             MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "Z").Replace("<Response_Object>", updateResponse.Content.Replace("'", "''")).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
                                                             daOrderUpdateData.ExecuteNonQuery();
                                                         }
                                                     }
                                                     else
                                                     {
-                                                        WriteConsoleMessage($"Could not get id property from {updateResponse.Content}", databaseSettings.MT_EMLConnectionString);
+                                                        WriteConsoleMessage($"Could not get id property from {updateResponse.Content}", connString);
                                                         MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "Z").Replace("<Response_Object>", updateResponse.Content.Replace("'", "''")).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
                                                         daOrderUpdateData.ExecuteNonQuery();
                                                     }
@@ -1503,7 +1518,7 @@ namespace BQ_ACECommerce
                                                 }
                                                 else
                                                 {
-                                                    WriteConsoleMessage($"Could not get ecomOrder property from {updateResponse.Content}", databaseSettings.MT_EMLConnectionString);
+                                                    WriteConsoleMessage($"Could not get ecomOrder property from {updateResponse.Content}", connString);
                                                     MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "Z").Replace("<Response_Object>", updateResponse.Content.Replace("'", "''")).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
                                                     daOrderUpdateData.ExecuteNonQuery();
                                                 }
@@ -1511,7 +1526,7 @@ namespace BQ_ACECommerce
                                             else
                                             {
                                                 var updateResponseContent = $"API error status: {updateResponse.StatusCode} {updateResponse.Content} {updateResponse.ErrorMessage}";
-                                                WriteConsoleMessage($"FAILED to update order {existingOrderId} with ExternalOrderId: {orderId} Status: {updateResponse.StatusCode} ErrorMessage: {updateResponseContent}", databaseSettings.MT_EMLConnectionString);
+                                                WriteConsoleMessage($"FAILED to update order {existingOrderId} with ExternalOrderId: {orderId} Status: {updateResponse.StatusCode} ErrorMessage: {updateResponseContent}", connString);
                                                 MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "E").Replace("<Response_Object>", updateResponse.ErrorMessage).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
                                                 daOrderUpdateData.ExecuteNonQuery();
 
@@ -1524,32 +1539,32 @@ namespace BQ_ACECommerce
                                 catch (Exception ex)
                                 {
 
-                                    if (loggingSettings.Debug) WriteConsoleMessage($"An error occured while processing Order ID {r["Order_Id"]} Email {r["Order_Email"]}  {ex.Message}", databaseSettings.MT_EMLConnectionString);
-                                    WriteConsoleMessage(ex.Message, databaseSettings.MT_EMLConnectionString);
+                                    if (loggingSettings.Debug) WriteConsoleMessage($"An error occured while processing Order ID {r["Order_Id"]} Email {r["Order_Email"]}  {ex.Message}", connString);
+                                    WriteConsoleMessage(ex.Message, connString);
 
                                 }
                             }
                             catch (Exception ex)
                             {
-                                if (loggingSettings.Debug) WriteConsoleMessage("An error occured while constructing outgoing request to check for Customer.  See next record if an exception message is available.", databaseSettings.MT_EMLConnectionString);
-                                WriteConsoleMessage(ex.Message, databaseSettings.MT_EMLConnectionString);
+                                if (loggingSettings.Debug) WriteConsoleMessage("An error occured while constructing outgoing request to check for Customer.  See next record if an exception message is available.", connString);
+                                WriteConsoleMessage(ex.Message, connString);
                             }
                         }
 
 
 
 
-                        if (loggingSettings.Debug) WriteConsoleMessage("Completed calls to PV.  See previous lines for any errors that may have occurred.", databaseSettings.MT_EMLConnectionString);
-                        WriteConsoleMessage("Ending Service", databaseSettings.MT_EMLConnectionString);
-                    } // end try using (MySqlConnection emlConnection = new MySqlConnection(databaseSettings.MT_EMLConnectionString))
+                        if (loggingSettings.Debug) WriteConsoleMessage("Completed calls to PV.  See previous lines for any errors that may have occurred.", connString);
+                        WriteConsoleMessage("Ending Service", connString);
+                    } // end try using (MySqlConnection emlConnection = new MySqlConnection(connString))
                     catch (Exception ex)
                     {
-                        WriteConsoleMessage(ex.Message, databaseSettings.MT_EMLConnectionString);
+                        WriteConsoleMessage(ex.Message, connString);
                     }
                 }
 
             }
-            */
+        
 
         }
     }
