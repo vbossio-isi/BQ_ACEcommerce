@@ -11,7 +11,7 @@ using MySql.Data;
 using MySql.Data.MySqlClient;
 using ZstdNet;
 
-namespace ACECommerce
+namespace BQ_ACECommerce
 {
 
     // Notes from the ActiveCampaign website about dealing with processing problems
