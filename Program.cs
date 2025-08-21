@@ -6,10 +6,11 @@ using System.Text;
 using System.Data;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
-using Oracle.ManagedDataAccess.Client;
-using MySql.Data;
-using MySql.Data.MySqlClient;
-using ZstdNet;
+//using Oracle.ManagedDataAccess.Client;
+//using MySql.Data;
+//using MySql.Data.MySqlClient;
+using Microsoft.Data.SqlClient;
+
 
 namespace BQ_ACECommerce
 {
@@ -496,7 +497,7 @@ namespace BQ_ACECommerce
         public static void WriteConsoleMessage(string msg, string mySQLconnectionString)
         {
             WriteConsoleMessage(msg);
-
+/*
             using (MySqlConnection emlConnection = new MySqlConnection(mySQLconnectionString))
             {
                 emlConnection.Open();
@@ -509,7 +510,7 @@ namespace BQ_ACECommerce
                 // MySqlCommand cmdWriteLog = new MySqlCommand("INSERT INTO tbl_MKTECommOrderInfoLog(LogData) VALUES ('" + msg + "')", emlConnection);
                 // cmdWriteLog.ExecuteNonQuery();
             }
-
+*/
         }
 
         private static void WriteConsoleMessage(string msg)
@@ -524,7 +525,15 @@ namespace BQ_ACECommerce
 
         public static async Task Main(string[] args)
         {
-            IConfigurationBuilder builder = new ConfigurationBuilder().AddJsonFile("appsettings.json", false, true);
+//           IConfigurationBuilder builder = new ConfigurationBuilder().AddJsonFile("appsettings.json", false, true);    
+
+            string projectRoot = Path.Combine(AppContext.BaseDirectory, @"..\..\.."); // navigate up 3 folders
+            projectRoot = Path.GetFullPath(projectRoot); // normalize path
+
+            var builder = new ConfigurationBuilder()
+                .SetBasePath(projectRoot)
+                .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true);
+
             IConfigurationRoot root = builder.Build();
 
             LoggingSettings loggingSettings = new();
@@ -544,6 +553,39 @@ namespace BQ_ACECommerce
                 .Bind(acAPISettings);
 
 
+            string connString = root["SqlConnectionString"];
+
+
+            // Use SqlClient
+            using (SqlConnection conn = new SqlConnection(connString))
+            {
+                conn.Open();
+                Console.WriteLine(conn == null ? "conn is NULL!" : "conn is OK");
+                Console.WriteLine("Connected to SQL Server!");
+
+                string sql = "SELECT TOP 5 name, create_date FROM sys.databases";
+
+                Console.WriteLine(sql == null ? "sql is NULL!" : $"SQL = {sql}");
+
+                var assembly = typeof(SqlCommand).Assembly.Location;
+                Console.WriteLine($"SqlCommand from: {assembly}");
+
+
+                using (SqlCommand cmd = new SqlCommand(sql, conn))
+                {
+                    // cmd.CommandText must not be null
+                    Console.WriteLine($"SQL: {cmd.CommandText}");
+                    using (SqlDataReader reader = cmd.ExecuteReader())  // <- this is where yours fails
+                    {
+                        while (reader.Read())
+                        {
+                            Console.WriteLine($"{reader["name"]} - {reader["create_date"]}");
+                        }
+                    }
+                }
+
+            }
+/*
             WriteConsoleMessage("Beginning Service", databaseSettings.MT_EMLConnectionString);
 
             if (loggingSettings.Debug)
@@ -649,7 +691,7 @@ namespace BQ_ACECommerce
                         where o.order_update_status = 'P'
                         group by o.order_id, o.order_email, o.Attending_Patron_Account_id, o.coupon
                         order by o.order_id, o.order_email, o.Attending_Patron_Account_id, o.coupon";
-//having t.order_id in (42761910,42761811,)";
+                //having t.order_id in (42761910,42761811,)";
 
                 // second query runs for each order to get product list
                 string queryTicketDetails = @"select t.buyer_type_code, t.buyer_type_desc, t.buyer_type_group_id, t.ticket_price,
@@ -877,7 +919,7 @@ namespace BQ_ACECommerce
                                                 "STR_TO_DATE('" + (r["EVENT_DATE"]) + "', '%m/%d/%Y %h:%i:%s %p'), " +
                                                 "'" + r["GUEST_TYPE"] + "', " +
                                                 "'" + r["EVENT_TYPE"] + "', " +
-                                                "'" + r["Agency"] + "'," + 
+                                                "'" + r["Agency"] + "'," +
                                                 r["ATTENDING_PATRON_ACCOUNT_ID"];
 
                                             cmdInsertOrder.CommandText = queryOrdersInsertString.Replace("<VALUES>", orderValuesString);
@@ -1146,7 +1188,7 @@ namespace BQ_ACECommerce
                                 string externalId = r["Attending_Patron_Account_id"].ToString();
                                 string createdDate = r["OrderDate"] == DBNull.Value ? null : ((DateTime)r["OrderDate"]).ToString("yyyy-MM-ddTHH:mm:ss");
                                 string updatedDate = r["LastUpdatedDtm"] == DBNull.Value ? null : ((DateTime)r["LastUpdatedDtm"]).ToString("yyyy-MM-ddTHH:mm:ss");
-                                
+
                                 string connectionId = acAPISettings.ConnectionId;
                                 string customerId = "";
                                 bool customerExists = false;
@@ -1475,9 +1517,9 @@ namespace BQ_ACECommerce
 
                                             }
                                         }
-                                        
+
                                     }
-                                    
+
                                 }
                                 catch (Exception ex)
                                 {
@@ -1493,13 +1535,13 @@ namespace BQ_ACECommerce
                                 WriteConsoleMessage(ex.Message, databaseSettings.MT_EMLConnectionString);
                             }
                         }
-                        
+
 
 
 
                         if (loggingSettings.Debug) WriteConsoleMessage("Completed calls to PV.  See previous lines for any errors that may have occurred.", databaseSettings.MT_EMLConnectionString);
-                            WriteConsoleMessage("Ending Service", databaseSettings.MT_EMLConnectionString);
-                        } // end try using (MySqlConnection emlConnection = new MySqlConnection(databaseSettings.MT_EMLConnectionString))
+                        WriteConsoleMessage("Ending Service", databaseSettings.MT_EMLConnectionString);
+                    } // end try using (MySqlConnection emlConnection = new MySqlConnection(databaseSettings.MT_EMLConnectionString))
                     catch (Exception ex)
                     {
                         WriteConsoleMessage(ex.Message, databaseSettings.MT_EMLConnectionString);
@@ -1507,6 +1549,7 @@ namespace BQ_ACECommerce
                 }
 
             }
+            */
 
         }
     }
