@@ -1,15 +1,12 @@
-﻿using System;
+﻿using System.Data;
 using System.Net;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using System.Text;
-using System.Data;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Hosting;
-using Oracle.ManagedDataAccess.Client;
-//using MySql.Data;
-using MySql.Data.MySqlClient;
 using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Configuration;
+//using Sql.Data;
+using Oracle.ManagedDataAccess.Client;
 
 
 namespace BQ_ACECommerce
@@ -512,20 +509,20 @@ namespace BQ_ACECommerce
                 }
             }
 
-/*
-                                    using (MySqlConnection emlConnection = new MySqlConnection(mySQLconnectionString))
-                                    {
-                                        emlConnection.Open();
-                                        // logic below corrects it so that msg values that contain single quotes still work
-                                        using (MySqlCommand cmdWriteLog = new MySqlCommand("INSERT INTO tbl_MKTECommOrderInfoLog(LogData) VALUES (@msg)", emlConnection))
-                                        {
-                                            cmdWriteLog.Parameters.AddWithValue("@msg", msg);
-                                            cmdWriteLog.ExecuteNonQuery();
-                                        }
-                                        // MySqlCommand cmdWriteLog = new MySqlCommand("INSERT INTO tbl_MKTECommOrderInfoLog(LogData) VALUES ('" + msg + "')", emlConnection);
-                                        // cmdWriteLog.ExecuteNonQuery();
-                                    }
-                        */
+            /*
+            using (SqlConnection emlConnection = new SqlConnection(SqlconnectionString))
+            {
+                emlConnection.Open();
+                // logic below corrects it so that msg values that contain single quotes still work
+                using (SqlCommand cmdWriteLog = new SqlCommand("INSERT INTO tbl_MKTECommOrderInfoLog(LogData) VALUES (@msg)", emlConnection))
+                {
+                    cmdWriteLog.Parameters.AddWithValue("@msg", msg);
+                    cmdWriteLog.ExecuteNonQuery();
+                }
+                // SqlCommand cmdWriteLog = new SqlCommand("INSERT INTO tbl_MKTECommOrderInfoLog(LogData) VALUES ('" + msg + "')", emlConnection);
+                // cmdWriteLog.ExecuteNonQuery();
+            }
+            */
         }
 
         private static void WriteConsoleMessage(string msg)
@@ -570,37 +567,62 @@ namespace BQ_ACECommerce
 
             string connString = root["SqlConnectionString"];
 
-/* sql server test code
-            // Use SqlClient
-            using (SqlConnection conn = new SqlConnection(connString))
-            {
-                conn.Open();
-                Console.WriteLine(conn == null ? "conn is NULL!" : "conn is OK");
-                Console.WriteLine("Connected to SQL Server!");
-
-                string sql = "SELECT TOP 5 name, create_date FROM sys.databases";
-
-                Console.WriteLine(sql == null ? "sql is NULL!" : $"SQL = {sql}");
-
-                var assembly = typeof(SqlCommand).Assembly.Location;
-                Console.WriteLine($"SqlCommand from: {assembly}");
-
-
-                using (SqlCommand cmd = new SqlCommand(sql, conn))
-                {
-                    // cmd.CommandText must not be null
-                    Console.WriteLine($"SQL: {cmd.CommandText}");
-                    using (SqlDataReader reader = cmd.ExecuteReader())  // <- this is where yours fails
-                    {
-                        while (reader.Read())
+            /* sql server test code
+                        // Use SqlClient
+                        using (SqlConnection conn = new SqlConnection(connString))
                         {
-                            Console.WriteLine($"{reader["name"]} - {reader["create_date"]}");
-                        }
-                    }
-                }
+                            conn.Open();
+                            Console.WriteLine(conn == null ? "conn is NULL!" : "conn is OK");
+                            Console.WriteLine("Connected to SQL Server!");
 
+                            string sql = "SELECT TOP 5 name, create_date FROM sys.databases";
+
+                            Console.WriteLine(sql == null ? "sql is NULL!" : $"SQL = {sql}");
+
+                            var assembly = typeof(SqlCommand).Assembly.Location;
+                            Console.WriteLine($"SqlCommand from: {assembly}");
+
+
+                            using (SqlCommand cmd = new SqlCommand(sql, conn))
+                            {
+                                // cmd.CommandText must not be null
+                                Console.WriteLine($"SQL: {cmd.CommandText}");
+                                using (SqlDataReader reader = cmd.ExecuteReader())  // <- this is where yours fails
+                                {
+                                    while (reader.Read())
+                                    {
+                                        Console.WriteLine($"{reader["name"]} - {reader["create_date"]}");
+                                    }
+                                }
+                            }
+
+                        }
+            */
+            /* BigQuery test code 
+            var bq = new BigQueryHelper(root);
+            var sql = "select * from `tdc-replication.medieval_times.service_charge` limit 3"; 
+            var bqResults = await bq.FetchTableAsync("tdc-replication", sql);
+            // now extract to DataTable/DataSet
+            DataTable table = new DataTable("BigQueryData");
+
+            // create columns dynamically from schema with type mapping
+            foreach (var field in bqResults.Schema.Fields)
+            {
+                Type columnType = BigQueryHelper.MapBigQueryTypeToDotNet(field.Type);
+                table.Columns.Add(field.Name, columnType);
             }
-*/
+            // add data
+            foreach (var row in bqResults)
+            {
+                var dataRow = table.NewRow();
+                foreach (var field in bqResults.Schema.Fields)
+                {
+                    dataRow[field.Name] = BigQueryHelper.ConvertBigQueryValue(row[field.Name], field.Type);
+                }
+                table.Rows.Add(dataRow);
+            }
+            */
+
             WriteConsoleMessage("Beginning Service", connString);
 
             if (loggingSettings.Debug)
@@ -715,9 +737,39 @@ namespace BQ_ACECommerce
                         where Order_Id = <Order_Id>
                         group by t.buyer_type_code, t.buyer_type_desc, t.buyer_type_group_id, t.ticket_price";
 
-                string queryOrdersSelectPart1 = @"SELECT MAX(a.TRANSACTION_ID) as MAX_TRANSACTION_ID,  MAX(a.LAST_UPDATED_DATE) as LAST_UPDATED_DATE, b.ORDER_ID, d.EMAIL, 
-                                                            d.ATTENDING_PATRON_ACCOUNT_ID,  
-                                                            dm.DELIVERY_METHOD_CODE, o.SUPPLIER_ID, 'N' as CELEBRATING, 
+                string queryOrdersSelectPart1 = @"WITH FirstEmailPerOrder AS (
+                                                    SELECT ORDER_ID, EMAIL, ATTENDING_PATRON_ACCOUNT_ID, DELIVERY_METHOD_CODE
+                                                    FROM (
+                                                        SELECT
+                                                            t.ORDER_ID,
+                                                            d.EMAIL,
+                                                            d.ATTENDING_PATRON_ACCOUNT_ID,
+                                                            dm.DELIVERY_METHOD_CODE,
+                                                            ROW_NUMBER() OVER (
+                                                                PARTITION BY t.ORDER_ID
+                                                                ORDER BY d.CREATED_DATE ASC, d.DELIVERY_ID ASC
+                                                            ) AS rn
+                                                        FROM `tdc-replication.medieval_times.ticket` t
+                                                        JOIN `tdc-replication.medieval_times.ticket_delivery` td
+                                                            ON td.TICKET_ID = t.TICKET_ID
+                                                        AND td.REMOVE_TRANSACTION_ID IS NULL
+                                                        JOIN `tdc-replication.medieval_times.delivery` d
+                                                            ON d.DELIVERY_ID = td.DELIVERY_ID
+                                                        AND d.DELIVERY_STATUS_CODE <> 'C'
+                                                        JOIN `tdc-replication.medieval_times.delivery_method` dm
+                                                            ON dm.DELIVERY_METHOD_ID = d.DELIVERY_METHOD_ID
+                                                        WHERE dm.DELIVERY_TYPE_CODE = 'ETH'
+                                                    )
+                                                    WHERE rn = 1
+                                                ), cte_filtered_events AS (
+                                                    SELECT EVENT_ID, EVENT_DATE, EVENT_CATEGORY_ID
+                                                    FROM `tdc-replication.medieval_times.event`
+                                                    WHERE EVENT_CODE NOT LIKE '%GIFTCERT%'
+                                                    AND EVENT_CODE NOT LIKE '%BULK%'
+                                                )
+                                                SELECT MAX(a.TRANSACTION_ID) as MAX_TRANSACTION_ID,  MAX(a.LAST_UPDATED_DATE) as LAST_UPDATED_DATE, b.ORDER_ID, fe.EMAIL, 
+                                                            fe.ATTENDING_PATRON_ACCOUNT_ID,  
+                                                            fe.DELIVERY_METHOD_CODE, o.SUPPLIER_ID, 'N' as CELEBRATING, 
                                                             MAX(CASE WHEN p.PRICE_SCALE_CODE <> 'NONADM' THEN CONCAT(p.PUBLIC_DESCRIPTION, CASE WHEN p.PUBLIC_DESCRIPTION <> 'General Admission' THEN ' Upgrade' ELSE '' END)  ELSE NULL END) AS PACKAGE_TYPE,
                                                             SUM(CASE WHEN (bt.DESCRIPTION NOT LIKE ('%Child%') AND p.PRICE_SCALE_CODE <> 'NONADM') THEN 1 ELSE 0 END) AS ADULT_TICKETS,
                                                             SUM(CASE WHEN (bt.DESCRIPTION LIKE ('%Child%') AND p.PRICE_SCALE_CODE <> 'NONADM')THEN 1 ELSE 0 END) AS CHILD_TICKETS,
@@ -728,7 +780,7 @@ namespace BQ_ACECommerce
                                                                         WHEN p.PRICE_SCALE_CODE = 'CELEB' AND bt.DESCRIPTION NOT LIKE '%Military%' THEN 22.00
                                                                         WHEN p.PRICE_SCALE_CODE IN ('QUEENS','KINGS') AND bt.DESCRIPTION NOT LIKE '%Military%' THEN 27.00
                                                                 ELSE 0 END) AS PACKAGE_VALUE,
-                                                            NVL(MAX(COUPON_CODE),'') as COUPON,
+                                                            IFNULL(MAX(COUPON_CODE),'') as COUPON,
                                                             SUM(CASE WHEN p.PRICE_SCALE_CODE = 'NONADM' AND bt.DISPLAY_INDICATOR <> 'T' THEN PRICE ELSE 0.00 END) AS UPSELLS_VALUE, 
                                                             '' as UPSELLS_DATA,
                                                             o.ORDER_DATE,
@@ -737,71 +789,66 @@ namespace BQ_ACECommerce
                                                             ec.EVENT_CATEGORY_CODE as EVENT_TYPE,
                                                             ag.DESCRIPTION as Agency
                                                 FROM	
-                                                (SELECT ORDER_ID, ORDER_LINE_ITEM_ID, TRANSACTION_ID, EVENT_ID FROM Order_Line_Item WHERE ORDER_ID IN ";
-                string queryOrdersSelectPart2All = @"   (SELECT ORDER_ID FROM Order_Line_Item WHERE Transaction_Id IN 
-                                                            (SELECT TRANSACTION_ID FROM TRANSACTION  WHERE LAST_UPDATED_DATE + (5/24/60) > to_timestamp('<Last_Updated_Dtm>', 'MM/DD/YYYY HH:MI:SS AM')) 
-                                                        )
-                                                    ) b
+                                                (SELECT ORDER_ID, order_line_item_id, TRANSACTION_ID, EVENT_ID FROM `tdc-replication.medieval_times.order_line_item` WHERE ORDER_ID IN  ";
+                string queryOrdersSelectPart2All = @"   (SELECT ORDER_ID FROM `tdc-replication.medieval_times.order_line_item` WHERE Transaction_Id IN 
+                                                            (SELECT TRANSACTION_ID FROM `tdc-replication.medieval_times.transaction`  WHERE 
+                                                            bq_last_updated_date > DATETIME_SUB(DATETIME('<Last_Updated_Dtm>'), INTERVAL 5 MINUTE)) )
+                                                        ) b
                                                     ";
-                string queryOrdersSelectPart2Override = @"   (SELECT ORDER_ID FROM Order_Line_Item WHERE Transaction_Id IN (<TRANSACTIONLIST>)
+                string queryOrdersSelectPart2Override = @"   (SELECT ORDER_ID FROM `tdc-replication.medieval_times.order_line_item` WHERE Transaction_Id IN (<TRANSACTIONLIST>)
                                                         )
                                                     ) b
                                                     ";
 
-                string queryOrdersSelectPart3 = @" INNER JOIN  TRANSACTION a
-                                                ON b.TRANSACTION_ID = a.TRANSACTION_ID
-                                                INNER JOIN  EVENT e 
-                                                ON          b.EVENT_ID = e.EVENT_ID AND 
-                                                            b.EVENT_ID NOT IN (SELECT EVENT_ID FROM Event WHERE EVENT_CODE like '%GIFTCERT%' OR EVENT_CODE like '%BULK%') 
-                                                INNER JOIN  EVENT_CATEGORY ec
-                                                ON          e.EVENT_CATEGORY_ID = ec.EVENT_CATEGORY_ID
-                                                INNER JOIN  PATRON_ORDER o 
-                                                ON          b.ORDER_ID = o.ORDER_ID 
-                                                INNER JOIN  AGENCY ag
-                                                ON          o.CREATED_BY_AGENCY_ID = ag.AGENCY_ID
-                                                INNER JOIN  PATRON_ACCOUNT act 
-                                                ON          o.FINANCIAL_PATRON_ACCOUNT_ID = act.PATRON_ACCOUNT_ID 
-                                                INNER JOIN	PATRON_ACCOUNT_TYPE ac
-                                                ON				act.PATRON_ACCOUNT_TYPE_CODE = ac.PATRON_ACCOUNT_TYPE_CODE  
-                                                INNER JOIN  Ticket t   
-                                                ON          b.ORDER_LINE_ITEM_ID = t.ORDER_LINE_ITEM_ID AND   
-                                                            t.REMOVE_ORDER_LINE_ITEM_ID IS NULL 
-                                                LEFT JOIN   COUPON cp
-                                                ON          t.COUPON_ID = cp.COUPON_ID
-                                                INNER JOIN	PRICE_SCALE p
-                                                ON			p.PRICE_SCALE_ID = t.PRICE_SCALE_ID
-                                                INNER JOIN	BUYER_TYPE bt
-                                                ON			t.BUYER_TYPE_ID = bt.BUYER_TYPE_ID
-                                                INNER JOIN  Ticket_Delivery td   
-                                                ON			td.TICKET_ID = t.TICKET_ID   
-                                                AND			td.REMOVE_TRANSACTION_ID IS NULL    
-                                                INNER JOIN  Delivery d   
-                                                ON			d.DELIVERY_ID = td.DELIVERY_ID   
-                                                AND			d.DELIVERY_STATUS_CODE <> 'C'   
-                                                INNER JOIN	(SELECT * FROM delivery_method WHERE DELIVERY_TYPE_CODE = 'ETH') dm   
-                                                ON			dm.DELIVERY_METHOD_ID = d.DELIVERY_METHOD_ID   
-                                                GROUP BY    b.ORDER_ID, o.SUPPLIER_ID, d.EMAIL, d.ATTENDING_PATRON_ACCOUNT_ID, dm.DELIVERY_METHOD_CODE, -- p.PRICE_SCALE_CODE, 
-                                                            CASE WHEN ac.ACCOUNT_TYPE_CODE = 'IND' THEN 'IND' ELSE act.PATRON_ACCOUNT_TYPE_CODE END, 
-                                                            o.ORDER_DATE,
-                                                            e.EVENT_DATE,
-                                                            ec.EVENT_CATEGORY_CODE,
-                                                            ag.DESCRIPTION";
+                string queryOrdersSelectPart3 = @" INNER JOIN  `tdc-replication.medieval_times.transaction` a
+                                                    ON b.TRANSACTION_ID = a.TRANSACTION_ID
+                                                    INNER JOIN  cte_filtered_events e 
+                                                    ON          b.EVENT_ID = e.EVENT_ID 
+                                                    INNER JOIN  `tdc-replication.medieval_times.event_category` ec
+                                                    ON          e.EVENT_CATEGORY_ID = ec.EVENT_CATEGORY_ID
+                                                    INNER JOIN  `tdc-replication.medieval_times.patron_order` o 
+                                                    ON          b.ORDER_ID = o.ORDER_ID 
+                                                    INNER JOIN  `tdc-replication.medieval_times.agency` ag
+                                                    ON          o.CREATED_BY_AGENCY_ID = ag.AGENCY_ID
+                                                    INNER JOIN  `tdc-replication.medieval_times.patron_account` act 
+                                                    ON          o.FINANCIAL_PATRON_ACCOUNT_ID = act.PATRON_ACCOUNT_ID 
+                                                    INNER JOIN	`tdc-replication.medieval_times.patron_account_type` ac
+                                                    ON				act.PATRON_ACCOUNT_TYPE_CODE = ac.PATRON_ACCOUNT_TYPE_CODE  
+                                                    INNER JOIN  `tdc-replication.medieval_times.ticket` t   
+                                                    ON          b.order_line_item_id = t.order_line_item_id AND   
+                                                                t.remove_order_line_item_id IS NULL 
+                                                    LEFT JOIN   `tdc-replication.medieval_times.coupon` cp
+                                                    ON          t.COUPON_ID = cp.COUPON_ID
+                                                    INNER JOIN	`tdc-replication.medieval_times.price_scale` p
+                                                    ON			p.PRICE_SCALE_ID = t.PRICE_SCALE_ID
+                                                    INNER JOIN	`tdc-replication.medieval_times.buyer_type` bt
+                                                    ON			t.BUYER_TYPE_ID = bt.BUYER_TYPE_ID
+                                                    /* Note: we no longer join DELIVERY/TD/DM here; we use the preselected values */
+                                                    INNER JOIN FirstEmailPerOrder fe
+                                                    ON          fe.ORDER_ID = b.ORDER_ID 
+                                                    GROUP BY    b.ORDER_ID, o.SUPPLIER_ID, fe.EMAIL, fe.ATTENDING_PATRON_ACCOUNT_ID, fe.DELIVERY_METHOD_CODE, -- p.PRICE_SCALE_CODE, 
+                                                                CASE WHEN ac.ACCOUNT_TYPE_CODE = 'IND' THEN 'IND' ELSE act.PATRON_ACCOUNT_TYPE_CODE END, 
+                                                                o.ORDER_DATE,
+                                                                e.EVENT_DATE,
+                                                                ec.EVENT_CATEGORY_CODE,
+                                                                ag.DESCRIPTION";
 
                 string queryOrdersSelectString = queryOrdersSelectPart1 + queryOrdersSelectPart2All + queryOrdersSelectPart3;
 
                 string queryOrdersSelectWithOverrideString = queryOrdersSelectPart1 + queryOrdersSelectPart2Override + queryOrdersSelectPart3;
 
-                string queryOrdersVerifyString = "SELECT COUNT(*) as PreviousOrderCount FROM tbl_MKTECommOrderInfo WHERE TransactionId = <VALUE> AND Last_Updated_Dtm BETWEEN DATE_SUB(STR_TO_DATE('<Last_Updated_Dtm>', '%m/%d/%Y %h:%i:%s %p'), INTERVAL 1 SECOND) AND " +
-                                                "DATE_ADD(STR_TO_DATE('<Last_Updated_Dtm>', '%m/%d/%Y %h:%i:%s %p'), INTERVAL 1 SECOND)";
+                string queryOrdersVerifyString = "SELECT COUNT(*) as PreviousOrderCount FROM tbl_MKTECommOrderInfo WHERE TransactionId = <VALUE>  " +
+                                                " AND Last_Updated_Dtm BETWEEN dateadd(second,-1,'<Last_Updated_Dtm>') AND " +
+                                                " dateadd(second,1,'<Last_Updated_Dtm>')";
 
                 string queryAccountsToUpdateString = @"SELECT TransactionId, Order_Id, AC_ID, LocationDesc as Castle, Celebrating, Adult_Tickets + Child_Tickets as Number_Of_Tickets, Adult_Tickets, Child_Tickets, Tickets_Value, Coupon, Package_Type, Package_Value, 
                                                     Package_Type, Upsells_Value, Upsells_Data, Order_Date, Event_Date,  Guest_Type, Event_Type, Agency
-                                                    FROM  mt_eml.tbl_MKTECommOrderInfo a
-                                                    INNER JOIN tbl_EMLLocations b ON a.SUPPLIER_ID = b.SupplierId
+                                                    FROM  tbl_MKTECommOrderInfo a
+                                                    INNER JOIN fusion.dbo.tbl_location b ON a.SUPPLIER_ID = b.SupplierId
                                                     WHERE Order_Update_Status = 'P' AND AC_Exists = 'Y' AND TRIM(IFNULL(AC_Active_List,'')) <> ''";
 
                 string queryOrderIdsListString = @"SELECT DISTINCT Order_Id 
-                                                    FROM  mt_eml.tbl_MKTECommOrderInfo
+                                                    FROM  tbl_MKTECommOrderInfo
                                                     WHERE Order_Update_Status = 'P' AND AC_Exists = 'Y' AND TRIM(IFNULL(AC_Active_List,'')) <> ''";
 
                 string queryOrdersInsertString = "INSERT INTO tbl_MKTECommOrderInfo(TransactionId,Last_Updated_Dtm,Order_Id,Order_Email,Delivery_Type,SUPPLIER_ID,Celebrating,Adult_Tickets,Child_Tickets,Tickets_Value,Coupon,Package_Type,Package_Value,Upsells_Value,Upsells_Data,Order_Date,Event_Date,Guest_Type,Event_Type,Agency,Attending_Patron_Account_Id) SELECT <VALUES>";
@@ -809,15 +856,15 @@ namespace BQ_ACECommerce
                 string queryTicketsInsertString = "INSERT INTO tbl_MKTECommTicketDetail(TRANSACTION_ID, EVENT_ID, EVENT_CODE, EVENT_DATE_TIME, SUPPLIER_ID, PATRON_ACCOUNT_ID, ORDER_ID, PRICE_SCALE, BUYER_TYPE_CODE, BUYER_TYPE_DESC, BUYER_TYPE_GROUP_ID, REPORT_BUYER_TYPE_GROUP_ID, DISPLAY_INDICATOR, TAX_EXEMPT, TICKET_ID, PAYMENT_STATUS_CODE, TICKET_PRICE, CONV_FEE, SALES_TAX, GRATUITY, ALLOCATION, INC_SALES_TAX, TICKET_COUNT) SELECT <VALUES>";
 
 
-                string queryUpdateOrdersToSkip = "UPDATE mt_eml.tbl_MKTECommOrderInfo SET Order_Update_Status = 'X' WHERE Order_Update_Status = 'P'; " +
-                                                 "UPDATE mt_eml.tbl_MKTECommOrderInfo SET Order_Update_Status = 'S' WHERE Order_Update_Status = 'N' AND SUPPLIER_ID NOT IN " +
-                                                    "(SELECT SupplierId FROM tbl_EMLLocations WHERE EmailActive = 'Y'); " +
-                                                    "UPDATE mt_eml.tbl_MKTECommOrderInfo SET Order_Update_Status = 'P' WHERE Order_Update_Status = 'N' AND SUPPLIER_ID IN " +
-                                                    "(SELECT SupplierId FROM tbl_EMLLocations WHERE EmailActive = 'Y')";
+                string queryUpdateOrdersToSkip = "UPDATE tbl_MKTECommOrderInfo SET Order_Update_Status = 'X' WHERE Order_Update_Status = 'P'; " +
+                                                 "UPDATE tbl_MKTECommOrderInfo SET Order_Update_Status = 'S' WHERE Order_Update_Status = 'N' AND SUPPLIER_ID NOT IN " +
+                                                    "(SELECT SupplierId FROM fusion.dbo.tbl_location WHERE EmailActive = 'Y'); " +
+                                                    "UPDATE tbl_MKTECommOrderInfo SET Order_Update_Status = 'P' WHERE Order_Update_Status = 'N' AND SUPPLIER_ID IN " +
+                                                    "(SELECT SupplierId FROM fusion.dbo.tbl_location WHERE EmailActive = 'Y')";
 
                 string queryOrdersToProcessString = @"SELECT TransactionId,Last_Updated_Dtm,Order_Id,Order_Email,Delivery_Type,Celebrating,Adult_Tickets,Child_Tickets,Tickets_Value,Coupon,Package_Type,Package_Value,Upsells_Value,Upsells_Data,Order_Date,Event_Date,Guest_Type,Event_Type,Agency, LocationDesc as Castle
                                                     FROM (SELECT * FROM tbl_MKTECommOrderInfo WHERE Order_Update_Status = 'P') a 
-                                                    INNER JOIN tbl_EMLLocations b ON a.SUPPLIER_ID = b.SupplierId;";
+                                                    INNER JOIN fusion.dbo.tbl_location b ON a.SUPPLIER_ID = b.SupplierId;";
 
                 string queryOrderUpdateString = "UPDATE tbl_MKTECommOrderInfo SET Order_Update_Status = '<Order_Update_Status>', Order_Updated_Dtm = CURRENT_TIMESTAMP, Response_Object = '<Response_Object>' WHERE TransactionId = <MaxTransactionId>";
 
@@ -828,28 +875,28 @@ namespace BQ_ACECommerce
 
                 string queryOrderACDataString = "UPDATE tbl_MKTECommOrderInfo SET AC_Exists ='<AC_Exists>', AC_ID = <AC_ID>, AC_Active_List = '<AC_Active_List>' WHERE TransactionId = <MaxTransactionId>";
 
-                string queryRecordsMaintenanceString = "DELETE FROM tbl_MKTECommTicketDetailArchive WHERE Archived_Date_Time < NOW()- interval <ConfirmationTrimInterval> day; " +
+                string queryRecordsMaintenanceString = "DELETE FROM tbl_MKTECommTicketDetailArchive WHERE Archived_Date_Time < dateadd(day,-<ConfirmationTrimInterval>,getdate()); " +
 
-                                                        "DELETE FROM tbl_MKTECommOrderInfo WHERE Last_Updated_Dtm < NOW()- interval <ConfirmationTrimInterval> day; " +
+                                                        "DELETE FROM tbl_MKTECommOrderInfo WHERE Last_Updated_Dtm < dateadd(day,-<ConfirmationTrimInterval>,getdate()); " +
 
-                                                        "DELETE FROM tbl_MKTECommOrderInfoLog WHERE LogDate < NOW()- interval <ConfirmationTrimInterval> day; ";
+                                                        "DELETE FROM tbl_MKTECommOrderInfoLog WHERE LogDate < dateadd(day,-<ConfirmationTrimInterval>,getdate()); ";
 
 
-                using (MySqlConnection emlConnection = new MySqlConnection(connString))
+                using (SqlConnection emlConnection = new SqlConnection(connString))
                 {
                     try
                     {
                         if (loggingSettings.Debug) WriteConsoleMessage("Opening connection to EML", connString);
                         emlConnection.Open();
 
-                        MySqlCommand cmdRecordsMaintenance = new MySqlCommand(queryRecordsMaintenanceString.Replace("<ConfirmationTrimInterval>", loggingSettings.ConfirmationTrimInterval), emlConnection);
+                        SqlCommand cmdRecordsMaintenance = new SqlCommand(queryRecordsMaintenanceString.Replace("<ConfirmationTrimInterval>", loggingSettings.ConfirmationTrimInterval), emlConnection);
                         cmdRecordsMaintenance.ExecuteNonQuery();
 
                         string maxLast_Updated_DtmString = string.Empty;
 
                         if (!loggingSettings.OverrideTranDate)
                         {
-                            MySqlDataAdapter daMaxTransactionId = new MySqlDataAdapter("SELECT MAX(Last_Updated_Dtm) as MaxLast_Updated_Dtm FROM tbl_MKTECommOrderInfo", emlConnection);
+                            SqlDataAdapter daMaxTransactionId = new SqlDataAdapter("SELECT MAX(Last_Updated_Dtm) as MaxLast_Updated_Dtm FROM tbl_MKTECommOrderInfo", emlConnection);
                             DataSet dsMaxTransactionId = new DataSet();
                             daMaxTransactionId.Fill(dsMaxTransactionId);
 
@@ -861,107 +908,120 @@ namespace BQ_ACECommerce
                         }
                         else
                         {
-                            maxLast_Updated_DtmString = loggingSettings.OverrideTranDateValue.ToString("MM/dd/yyyy hh:mm:ss tt");
+                            maxLast_Updated_DtmString = loggingSettings.OverrideTranDateValue.ToString("yyyy-MM-dd HH:mm:ss");
                         }
 
                         if (!loggingSettings.ProcessOrdersTableOnly)
                         {
-                            using (OracleConnection pvConnection = new OracleConnection(databaseSettings.PVConnectionString))
+                            var bq = new BigQueryHelper(root);
+                            try
                             {
+                                int rowcount = 0;
+                                int totalRowcount = 0;
+                                string ordersString = string.Empty;
+
+                                if (loggingSettings.Debug) WriteConsoleMessage("Executing orders query in PV for ActiveCampaign updates", connString);
 
 
-                                try
+                                var ordersSql =
+                                    loggingSettings.TransactionIdOverride ? queryOrdersSelectWithOverrideString.Replace("<TRANSACTIONLIST>", loggingSettings.TransactionList) :
+                                    queryOrdersSelectString.Replace("<Last_Updated_Dtm>", maxLast_Updated_DtmString);
+
+                                var bqResults = await bq.FetchTableAsync("tdc-replication", ordersSql);
+                                // now extract to DataTable/DataSet
+                                DataTable dtOrders = new DataTable("BigQueryData");
+
+                                // create columns dynamically from schema with type mapping
+                                foreach (var field in bqResults.Schema.Fields)
                                 {
-                                    int rowcount = 0;
-                                    int totalRowcount = 0;
-                                    string ordersString = string.Empty;
-
-                                    if (loggingSettings.Debug) WriteConsoleMessage("Executing orders query in PV for ActiveCampaign updates", connString);
-
-
-                                    OracleDataAdapter daOrders = new OracleDataAdapter(
-                                        loggingSettings.TransactionIdOverride ? queryOrdersSelectWithOverrideString.Replace("<TRANSACTIONLIST>", loggingSettings.TransactionList) :
-                                        queryOrdersSelectString.Replace("<Last_Updated_Dtm>", maxLast_Updated_DtmString),
-                                            pvConnection);
-
-                                    DataSet dsOrders = new DataSet();
-                                    daOrders.SelectCommand.CommandTimeout = 900;
-                                    daOrders.Fill(dsOrders);
-
-                                    MySqlCommand cmdInsertOrder = new MySqlCommand();
-                                    cmdInsertOrder.Connection = emlConnection;
-                                    string orderValuesString = string.Empty;
-
-                                    if (loggingSettings.Debug) WriteConsoleMessage("Inserting orders into tbl_MKTECommOrderInfo", connString);
-                                    foreach (DataRow r in dsOrders.Tables[0].Rows)
+                                    Type columnType = BigQueryHelper.MapBigQueryTypeToDotNet(field.Type);
+                                    dtOrders.Columns.Add(field.Name, columnType);
+                                }
+                                // add data
+                                foreach (var row in bqResults)
+                                {
+                                    var dataRow = dtOrders.NewRow();
+                                    foreach (var field in bqResults.Schema.Fields)
                                     {
-                                        // allow order to be re-processed if overriding transaction id list
-                                        var bProcessOrder = true;
-                                        if (!loggingSettings.TransactionIdOverride)
-                                        {
-                                            bProcessOrder = false;
-                                            MySqlDataAdapter daVerifyOrder = new MySqlDataAdapter(queryOrdersVerifyString.Replace("<VALUE>", r["MAX_TRANSACTION_ID"].ToString()).Replace("<Last_Updated_Dtm>", r["LAST_UPDATED_DATE"].ToString()), emlConnection);
-                                            DataSet dsVerifyOrder = new DataSet();
-                                            daVerifyOrder.Fill(dsVerifyOrder);
-                                            DataRow r2 = dsVerifyOrder.Tables[0].Rows[0];
-                                            if (0 == int.Parse(r2["PreviousOrderCount"].ToString()))
-                                            {
-                                                bProcessOrder = true;
-                                            }
-                                        }
+                                        dataRow[field.Name] = BigQueryHelper.ConvertBigQueryValue(row[field.Name], field.Type);
+                                    }
+                                    dtOrders.Rows.Add(dataRow);
+                                }
 
-                                        if (bProcessOrder)
-                                        {
-                                            if (loggingSettings.Debug) WriteConsoleMessage("Inserting TransactionId " + r["MAX_TRANSACTION_ID"].ToString(), connString);
+                                SqlCommand cmdInsertOrder = new SqlCommand();
+                                cmdInsertOrder.Connection = emlConnection;
+                                string orderValuesString = string.Empty;
 
-                                            orderValuesString =
-                                                r["MAX_TRANSACTION_ID"] + ", " +
-                                                "STR_TO_DATE('" + (r["LAST_UPDATED_DATE"]) + "', '%m/%d/%Y %h:%i:%s %p'), " +
-                                                r["ORDER_ID"] + ", " +
-                                                "'" + r["EMAIL"].ToString().Replace("'", "''") + "', " +
-                                                "'" + r["DELIVERY_METHOD_CODE"] + "', " +
-                                                r["SUPPLIER_ID"] + ", " +
-                                                "'" + r["CELEBRATING"] + "', " +
-                                                r["ADULT_TICKETS"] + ", " +
-                                                r["CHILD_TICKETS"] + ", " +
-                                                r["TICKET_VALUE"] + ", " +
-                                                "'" + r["COUPON"] + "', " +
-                                                "'" + r["PACKAGE_TYPE"].ToString().Replace("'", "''") + "', " +
-                                                r["PACKAGE_VALUE"] + ", " +
-                                                r["UPSELLS_VALUE"] + ", " +
-                                                "'" + r["UPSELLS_DATA"].ToString().Replace("'", "''") + "', " +
-                                                "STR_TO_DATE('" + (r["ORDER_DATE"]) + "', '%m/%d/%Y %h:%i:%s %p'), " +
-                                                "STR_TO_DATE('" + (r["EVENT_DATE"]) + "', '%m/%d/%Y %h:%i:%s %p'), " +
-                                                "'" + r["GUEST_TYPE"] + "', " +
-                                                "'" + r["EVENT_TYPE"] + "', " +
-                                                "'" + r["Agency"] + "'," +
-                                                r["ATTENDING_PATRON_ACCOUNT_ID"];
-
-                                            cmdInsertOrder.CommandText = queryOrdersInsertString.Replace("<VALUES>", orderValuesString);
-                                            cmdInsertOrder.ExecuteNonQuery();
-                                        }
-                                        else
+                                if (loggingSettings.Debug) WriteConsoleMessage("Inserting orders into tbl_MKTECommOrderInfo", connString);
+                                foreach (DataRow r in dtOrders.Rows)
+                                {
+                                    // allow order to be re-processed if overriding transaction id list
+                                    var bProcessOrder = true;
+                                    if (!loggingSettings.TransactionIdOverride)
+                                    {
+                                        bProcessOrder = false;
+                                        SqlDataAdapter daVerifyOrder = new SqlDataAdapter(queryOrdersVerifyString.Replace("<VALUE>", r["MAX_TRANSACTION_ID"].ToString()).Replace("<Last_Updated_Dtm>", r["LAST_UPDATED_DATE"].ToString()), emlConnection);
+                                        DataSet dsVerifyOrder = new DataSet();
+                                        daVerifyOrder.Fill(dsVerifyOrder);
+                                        DataRow r2 = dsVerifyOrder.Tables[0].Rows[0];
+                                        if (0 == int.Parse(r2["PreviousOrderCount"].ToString()))
                                         {
-                                            if (loggingSettings.Debug) WriteConsoleMessage($"Skipping TransactionId {r["MAX_TRANSACTION_ID"].ToString()} because it was already processed", connString);
+                                            bProcessOrder = true;
                                         }
                                     }
-                                    if (loggingSettings.Debug) WriteConsoleMessage("Finished inserting orders into tbl_MKTECommOrderInfo", connString);
 
-                                    if (loggingSettings.Debug) WriteConsoleMessage("Update orders to skip if location not active", connString);
-                                    MySqlCommand cmdUpdateOrdersToSkip = new MySqlCommand(queryUpdateOrdersToSkip, emlConnection);
-                                    cmdUpdateOrdersToSkip.ExecuteNonQuery();
+                                    if (bProcessOrder)
+                                    {
+                                        if (loggingSettings.Debug) WriteConsoleMessage("Inserting TransactionId " + r["MAX_TRANSACTION_ID"].ToString(), connString);
+
+                                        orderValuesString =
+                                            r["MAX_TRANSACTION_ID"] + ", " +
+                                            "'" + (r["LAST_UPDATED_DATE"]) + "', " +
+                                            r["ORDER_ID"] + ", " +
+                                            "'" + r["EMAIL"].ToString().Replace("'", "''") + "', " +
+                                            "'" + r["DELIVERY_METHOD_CODE"] + "', " +
+                                            r["SUPPLIER_ID"] + ", " +
+                                            "'" + r["CELEBRATING"] + "', " +
+                                            r["ADULT_TICKETS"] + ", " +
+                                            r["CHILD_TICKETS"] + ", " +
+                                            r["TICKET_VALUE"] + ", " +
+                                            "'" + r["COUPON"] + "', " +
+                                            "'" + r["PACKAGE_TYPE"].ToString().Replace("'", "''") + "', " +
+                                            r["PACKAGE_VALUE"] + ", " +
+                                            r["UPSELLS_VALUE"] + ", " +
+                                            "'" + r["UPSELLS_DATA"].ToString().Replace("'", "''") + "', " +
+                                            "'" + (r["ORDER_DATE"]) + "', " +
+                                            "'" + (r["EVENT_DATE"]) + "', " +
+                                            "'" + r["GUEST_TYPE"] + "', " +
+                                            "'" + r["EVENT_TYPE"] + "', " +
+                                            "'" + r["Agency"] + "'," +
+                                            r["ATTENDING_PATRON_ACCOUNT_ID"];
+
+                                        cmdInsertOrder.CommandText = queryOrdersInsertString.Replace("<VALUES>", orderValuesString);
+                                        cmdInsertOrder.ExecuteNonQuery();
+                                    }
+                                    else
+                                    {
+                                        if (loggingSettings.Debug) WriteConsoleMessage($"Skipping TransactionId {r["MAX_TRANSACTION_ID"].ToString()} because it was already processed", connString);
+                                    }
                                 }
-                                catch (Exception ex)
-                                {
-                                    WriteConsoleMessage(ex.Message, connString);
-                                }
+                                if (loggingSettings.Debug) WriteConsoleMessage("Finished inserting orders into tbl_MKTECommOrderInfo", connString);
+
+                                if (loggingSettings.Debug) WriteConsoleMessage("Update orders to skip if location not active", connString);
+                                SqlCommand cmdUpdateOrdersToSkip = new SqlCommand(queryUpdateOrdersToSkip, emlConnection);
+                                cmdUpdateOrdersToSkip.ExecuteNonQuery();
                             }
+                            catch (Exception ex)
+                            {
+                                WriteConsoleMessage(ex.Message, connString);
+                            }
+                            
 
                             try
                             {
                                 if (loggingSettings.Debug) WriteConsoleMessage("Getting orders to process", connString);
 
-                                MySqlDataAdapter daOrdersToProcess = new MySqlDataAdapter(queryOrdersToProcessString, emlConnection);
+                                SqlDataAdapter daOrdersToProcess = new SqlDataAdapter(queryOrdersToProcessString, emlConnection);
                                 DataSet dsOrdersToProcess = new DataSet();
                                 daOrdersToProcess.Fill(dsOrdersToProcess);
 
@@ -1003,7 +1063,7 @@ namespace BQ_ACECommerce
                                                     {
                                                         ac_id = contactWithLists.ContactLists.FirstOrDefault(cl => cl.Status == "1")?.Contact;
                                                         if (loggingSettings.Debug) WriteConsoleMessage($"Found {r["Order_Email"].ToString()} in ActiveCampaign with Id = {ac_id} active on at least one list", connString);
-                                                        MySqlCommand daACData = new MySqlCommand(queryOrderACDataString.Replace("<AC_Exists>", "Y").Replace("<AC_ID>", ac_id).Replace("<AC_Active_List>", listsWithStatusOne).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
+                                                        SqlCommand daACData = new SqlCommand(queryOrderACDataString.Replace("<AC_Exists>", "Y").Replace("<AC_ID>", ac_id).Replace("<AC_Active_List>", listsWithStatusOne).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
                                                         daACData.ExecuteNonQuery();
                                                         isActive = true;
                                                     }
@@ -1011,7 +1071,7 @@ namespace BQ_ACECommerce
                                                     {
                                                         ac_id = contactWithLists.Contacts.FirstOrDefault()?.Id;
                                                         if (loggingSettings.Debug) WriteConsoleMessage($"Found {r["Order_Email"].ToString()} in ActiveCampaign with Id = {ac_id} but no active lists", connString);
-                                                        MySqlCommand daACData = new MySqlCommand(queryOrderACDataString.Replace("<AC_Exists>", "Y").Replace("<AC_ID>", ac_id).Replace("<Order_Update_Status>", "S").Replace("<AC_Active_List>", "").Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
+                                                        SqlCommand daACData = new SqlCommand(queryOrderACDataString.Replace("<AC_Exists>", "Y").Replace("<AC_ID>", ac_id).Replace("<Order_Update_Status>", "S").Replace("<AC_Active_List>", "").Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
                                                         daACData.ExecuteNonQuery();
                                                         isActive = false;
                                                     }
@@ -1020,10 +1080,10 @@ namespace BQ_ACECommerce
                                                 {
                                                     string jsonResponse = JsonSerializer.Serialize(contactWithLists);
 
-                                                    MySqlCommand daACData = new MySqlCommand(queryOrderACDataString.Replace("<AC_Exists>", "N").Replace("<AC_ID>", "0").Replace("<AC_Active_List>", string.Empty).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
+                                                    SqlCommand daACData = new SqlCommand(queryOrderACDataString.Replace("<AC_Exists>", "N").Replace("<AC_ID>", "0").Replace("<AC_Active_List>", string.Empty).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
                                                     daACData.ExecuteNonQuery();
 
-                                                    MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "S").Replace("<Response_Object>", jsonResponse).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
+                                                    SqlCommand daOrderUpdateData = new SqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "S").Replace("<Response_Object>", jsonResponse).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
                                                     daOrderUpdateData.ExecuteNonQuery();
 
                                                     isActive = false;
@@ -1033,7 +1093,7 @@ namespace BQ_ACECommerce
                                             {
                                                 var responseContent = $"API error status: {response.StatusCode} {response.Content} {response.ErrorMessage}";
                                                 WriteConsoleMessage($"Could not get contact for transactionid {currentTransactionId}", connString);
-                                                MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "E").Replace("<Response_Object>", responseContent).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
+                                                SqlCommand daOrderUpdateData = new SqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "E").Replace("<Response_Object>", responseContent).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
                                                 daOrderUpdateData.ExecuteNonQuery();
                                             }
                                         }
@@ -1043,7 +1103,7 @@ namespace BQ_ACECommerce
                                             {
                                                 if (int.TryParse(currentTransactionId, out int id))
                                                 {
-                                                    MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "E").Replace("<Response_Object>", ex.Message).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
+                                                    SqlCommand daOrderUpdateData = new SqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "E").Replace("<Response_Object>", ex.Message).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
                                                     daOrderUpdateData.ExecuteNonQuery();
                                                 }
                                             }
@@ -1085,12 +1145,12 @@ namespace BQ_ACECommerce
 
                         if (!loggingSettings.ProcessTicketsTableOnly)
                         {
-                            // archive the current MySQL ticket detail table and truncate
-                            MySqlCommand cmdArchive = new MySqlCommand(queryTicketsArchive, emlConnection);
+                            // archive the current Sql ticket detail table and truncate
+                            SqlCommand cmdArchive = new SqlCommand(queryTicketsArchive, emlConnection);
                             cmdArchive.ExecuteNonQuery();
 
                             // get order id list
-                            MySqlDataAdapter daOrderIdList = new MySqlDataAdapter(queryOrderIdsListString, emlConnection);
+                            SqlDataAdapter daOrderIdList = new SqlDataAdapter(queryOrderIdsListString, emlConnection);
                             DataSet dsOrderIdList = new DataSet();
                             daOrderIdList.Fill(dsOrderIdList);
 
@@ -1120,7 +1180,7 @@ namespace BQ_ACECommerce
                                         daTickets.SelectCommand.CommandTimeout = 900;
                                         daTickets.Fill(dsTickets);
 
-                                        MySqlCommand cmdInsertTicket = new MySqlCommand();
+                                        SqlCommand cmdInsertTicket = new SqlCommand();
                                         cmdInsertTicket.Connection = emlConnection;
                                         string ticketValuesString = string.Empty;
 
@@ -1184,7 +1244,7 @@ namespace BQ_ACECommerce
 
                         // build customer and order info for EComm API
                         // Order info has either 0 or 1 coupons - keep this together with header info
-                        MySqlDataAdapter daApiOrderList = new MySqlDataAdapter(queryTicketOrders, emlConnection);
+                        SqlDataAdapter daApiOrderList = new SqlDataAdapter(queryTicketOrders, emlConnection);
                         DataSet dsApiOrderList = new DataSet();
                         daApiOrderList.Fill(dsApiOrderList);
 
@@ -1232,7 +1292,7 @@ namespace BQ_ACECommerce
                                     {
                                         var responseContent = $"API error status: {response.StatusCode} {response.Content} {response.ErrorMessage}";
                                         WriteConsoleMessage(responseContent, connString);
-                                        MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "E").Replace("<Response_Object>", responseContent).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
+                                        SqlCommand daOrderUpdateData = new SqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "E").Replace("<Response_Object>", responseContent).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
                                         daOrderUpdateData.ExecuteNonQuery();
                                         continue; // go to next row, do not process order if customer lookup failed
                                     }
@@ -1281,7 +1341,7 @@ namespace BQ_ACECommerce
                                         else
                                         {
                                             var createResponseContent = $"API error status: {createResponse.StatusCode} {createResponse.Content} {createResponse.ErrorMessage}";
-                                            MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "E").Replace("<Response_Object>", createResponseContent).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
+                                            SqlCommand daOrderUpdateData = new SqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "E").Replace("<Response_Object>", createResponseContent).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
                                             daOrderUpdateData.ExecuteNonQuery();
                                             continue; // go to next row, do not process order if customer could not be created
                                         }
@@ -1292,7 +1352,7 @@ namespace BQ_ACECommerce
                                     if (string.IsNullOrEmpty(customerId))
                                     {
                                         WriteConsoleMessage($"Customer id is blank for order {orderId}", connString);
-                                        MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "E").Replace("<Response_Object>", $"Customer id is blank for order {orderId}").Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
+                                        SqlCommand daOrderUpdateData = new SqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "E").Replace("<Response_Object>", $"Customer id is blank for order {orderId}").Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
                                         daOrderUpdateData.ExecuteNonQuery();
                                         continue; // do not process if we don't have a valid customer
                                     }
@@ -1319,13 +1379,13 @@ namespace BQ_ACECommerce
                                                 existingOrderId = orders[0].GetProperty("id").GetString();
                                                 WriteConsoleMessage($"ExternalOrderId {orderId} found with Ecom order id {existingOrderId}, order will be updated.", connString);
 
-                                                MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdatePostTypeString.Replace("<Order_Post_Type>", "U").Replace("<Response_Object>", checkOrderResponse.Content.Replace("'", "''")).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
+                                                SqlCommand daOrderUpdateData = new SqlCommand(queryOrderUpdatePostTypeString.Replace("<Order_Post_Type>", "U").Replace("<Response_Object>", checkOrderResponse.Content.Replace("'", "''")).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
                                                 daOrderUpdateData.ExecuteNonQuery();
                                             }
                                             else
                                             {
                                                 WriteConsoleMessage($"Error: Returned ExternalId {returnedExternalId} does not match current externalId {orderId}", connString);
-                                                MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "E").Replace("<Response_Object>", checkOrderResponse.Content.Replace("'", "''")).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
+                                                SqlCommand daOrderUpdateData = new SqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "E").Replace("<Response_Object>", checkOrderResponse.Content.Replace("'", "''")).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
                                                 daOrderUpdateData.ExecuteNonQuery();
                                             }
 
@@ -1334,14 +1394,14 @@ namespace BQ_ACECommerce
                                         {
                                             processOrderToEcomm = true;
                                             WriteConsoleMessage($"External Id {orderId} not found, creating new.", connString);
-                                            MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdatePostTypeString.Replace("<Order_Post_Type>", "I").Replace("<Response_Object>", checkOrderResponse.Content.Replace("'", "''")).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
+                                            SqlCommand daOrderUpdateData = new SqlCommand(queryOrderUpdatePostTypeString.Replace("<Order_Post_Type>", "I").Replace("<Response_Object>", checkOrderResponse.Content.Replace("'", "''")).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
                                             daOrderUpdateData.ExecuteNonQuery();
                                         }
                                     }
                                     else
                                     {
                                         var checkOrderResponseContent = $"API error status: {checkOrderResponse.StatusCode} {checkOrderResponse.Content} {checkOrderResponse.ErrorMessage}";
-                                        MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "E").Replace("<Response_Object>", checkOrderResponseContent).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
+                                        SqlCommand daOrderUpdateData = new SqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "E").Replace("<Response_Object>", checkOrderResponseContent).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
                                         daOrderUpdateData.ExecuteNonQuery();
                                         continue; // go to next row, do not continue if check for existing order failed
                                     }
@@ -1355,7 +1415,7 @@ namespace BQ_ACECommerce
                                         // Each product on the order comes from ticket buyer_type_code
                                         var orderProducts = new List<OrderProduct>();
                                         var orderTicketDetails = queryTicketDetails.Replace("<Order_Id>", orderId).Replace("<Transaction_Id>", currentTransactionId);
-                                        MySqlDataAdapter daApiTicketList = new MySqlDataAdapter(orderTicketDetails, emlConnection);
+                                        SqlDataAdapter daApiTicketList = new SqlDataAdapter(orderTicketDetails, emlConnection);
                                         DataSet dsApiTicketList = new DataSet();
                                         daApiTicketList.Fill(dsApiTicketList);
 
@@ -1449,13 +1509,13 @@ namespace BQ_ACECommerce
                                                         var newOrderId = idElement.GetString();
                                                         WriteConsoleMessage($"Ecom order id {newOrderId} created with ExternalOrderId {orderId}", connString);
 
-                                                        MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "Y").Replace("<Response_Object>", orderResponse.Content.Replace("'", "''")).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
+                                                        SqlCommand daOrderUpdateData = new SqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "Y").Replace("<Response_Object>", orderResponse.Content.Replace("'", "''")).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
                                                         daOrderUpdateData.ExecuteNonQuery();
                                                     }
                                                     else
                                                     {
                                                         WriteConsoleMessage($"Could not get id property from {orderResponse.Content}", connString);
-                                                        MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "Z").Replace("<Response_Object>", orderResponse.Content.Replace("'", "''")).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
+                                                        SqlCommand daOrderUpdateData = new SqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "Z").Replace("<Response_Object>", orderResponse.Content.Replace("'", "''")).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
                                                         daOrderUpdateData.ExecuteNonQuery();
                                                     }
 
@@ -1463,7 +1523,7 @@ namespace BQ_ACECommerce
                                                 else
                                                 {
                                                     WriteConsoleMessage($"Could not get ecomOrder property from {orderResponse.Content}", connString);
-                                                    MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "Z").Replace("<Response_Object>", orderResponse.Content.Replace("'", "''")).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
+                                                    SqlCommand daOrderUpdateData = new SqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "Z").Replace("<Response_Object>", orderResponse.Content.Replace("'", "''")).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
                                                     daOrderUpdateData.ExecuteNonQuery();
                                                 }
                                             }
@@ -1471,7 +1531,7 @@ namespace BQ_ACECommerce
                                             {
                                                 var orderResponseContent = $"API error status: {orderResponse.StatusCode} {orderResponse.Content} {orderResponse.ErrorMessage}";
                                                 WriteConsoleMessage($"FAILED Order Post for ExternalOrderId: {orderId} Status: {orderResponse.StatusCode} ErrorMessage: {orderResponseContent}", connString);
-                                                MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "E").Replace("<Response_Object>", orderResponseContent).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
+                                                SqlCommand daOrderUpdateData = new SqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "E").Replace("<Response_Object>", orderResponseContent).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
                                                 daOrderUpdateData.ExecuteNonQuery();
 
                                             }
@@ -1498,20 +1558,20 @@ namespace BQ_ACECommerce
                                                         {
                                                             WriteConsoleMessage($"Ecom order id {newOrderId} updated for ExternalOrderId {orderId}", connString);
 
-                                                            MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "Y").Replace("<Response_Object>", updateResponse.Content.Replace("'", "''")).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
+                                                            SqlCommand daOrderUpdateData = new SqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "Y").Replace("<Response_Object>", updateResponse.Content.Replace("'", "''")).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
                                                             daOrderUpdateData.ExecuteNonQuery();
                                                         }
                                                         else
                                                         {
                                                             WriteConsoleMessage($"Updated order id {newOrderId} does not match order we attempted to update {existingOrderId}", connString);
-                                                            MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "Z").Replace("<Response_Object>", updateResponse.Content.Replace("'", "''")).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
+                                                            SqlCommand daOrderUpdateData = new SqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "Z").Replace("<Response_Object>", updateResponse.Content.Replace("'", "''")).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
                                                             daOrderUpdateData.ExecuteNonQuery();
                                                         }
                                                     }
                                                     else
                                                     {
                                                         WriteConsoleMessage($"Could not get id property from {updateResponse.Content}", connString);
-                                                        MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "Z").Replace("<Response_Object>", updateResponse.Content.Replace("'", "''")).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
+                                                        SqlCommand daOrderUpdateData = new SqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "Z").Replace("<Response_Object>", updateResponse.Content.Replace("'", "''")).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
                                                         daOrderUpdateData.ExecuteNonQuery();
                                                     }
 
@@ -1519,7 +1579,7 @@ namespace BQ_ACECommerce
                                                 else
                                                 {
                                                     WriteConsoleMessage($"Could not get ecomOrder property from {updateResponse.Content}", connString);
-                                                    MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "Z").Replace("<Response_Object>", updateResponse.Content.Replace("'", "''")).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
+                                                    SqlCommand daOrderUpdateData = new SqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "Z").Replace("<Response_Object>", updateResponse.Content.Replace("'", "''")).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
                                                     daOrderUpdateData.ExecuteNonQuery();
                                                 }
                                             }
@@ -1527,7 +1587,7 @@ namespace BQ_ACECommerce
                                             {
                                                 var updateResponseContent = $"API error status: {updateResponse.StatusCode} {updateResponse.Content} {updateResponse.ErrorMessage}";
                                                 WriteConsoleMessage($"FAILED to update order {existingOrderId} with ExternalOrderId: {orderId} Status: {updateResponse.StatusCode} ErrorMessage: {updateResponseContent}", connString);
-                                                MySqlCommand daOrderUpdateData = new MySqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "E").Replace("<Response_Object>", updateResponse.ErrorMessage).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
+                                                SqlCommand daOrderUpdateData = new SqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "E").Replace("<Response_Object>", updateResponse.ErrorMessage).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
                                                 daOrderUpdateData.ExecuteNonQuery();
 
                                             }
@@ -1556,7 +1616,7 @@ namespace BQ_ACECommerce
 
                         if (loggingSettings.Debug) WriteConsoleMessage("Completed calls to PV.  See previous lines for any errors that may have occurred.", connString);
                         WriteConsoleMessage("Ending Service", connString);
-                    } // end try using (MySqlConnection emlConnection = new MySqlConnection(connString))
+                    } // end try using (SqlConnection emlConnection = new SqlConnection(connString))
                     catch (Exception ex)
                     {
                         WriteConsoleMessage(ex.Message, connString);
