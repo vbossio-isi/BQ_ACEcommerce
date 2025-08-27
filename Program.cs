@@ -652,7 +652,8 @@ namespace BQ_ACECommerce
             if (TimeToRun())
             {
 
-                string queryTicketsSelectString = @"SELECT              e.EVENT_ID, 
+                string queryTicketsSelectString = @"WITH ol AS (SELECT ORDER_ID, EVENT_ID, ORDER_LINE_ITEM_ID FROM `tdc-replication.medieval_times.order_line_item` WHERE ORDER_ID IN (<Order_Id_List>))
+                                        SELECT              e.EVENT_ID, 
                                                             EVENT_CODE, 
                                                             EVENT_DATE AS EVENT_DATE_TIME, 
                                                             e.Supplier_Id, 
@@ -674,25 +675,26 @@ namespace BQ_ACECommerce
                                                             SUM(CASE WHEN (s.IS_TAX = 1 OR s.SERVICE_CHARGE_CODE = 'CONVSNTAX') AND (s.INCLUDE_IN_TICKET_PRICE = 1) THEN si.ACTUAL_AMOUNT ELSE 0 END) AS INC_SALES_TAX, 
                                                             SUM(CASE WHEN s.SERVICE_CHARGE_CODE LIKE '%TIP%' AND s.INCLUDE_IN_TICKET_PRICE = 0 THEN si.ACTUAL_AMOUNT ELSE 0 END) AS GRATUITY, 
                                                             SUM(CASE WHEN s.INCLUDE_IN_TICKET_PRICE = 1 THEN si.ACTUAL_AMOUNT ELSE 0 END) AS ALLOCATION, 
-                                                            1 AS TICKET_COUNT 
-                                        FROM                      TICKET t 
-                                        INNER JOIN          (SELECT * FROM ORDER_LINE_ITEM WHERE ORDER_ID IN (<Order_Id_List>)) ol 
+                                                            1 AS TICKET_COUNT,
+                                                            MAX(t.bq_last_updated_date) as bq_last_updated_date
+                                        FROM                      `tdc-replication.medieval_times.ticket` t 
+                                        INNER JOIN          ol
                                         ON                                             t.ORDER_LINE_ITEM_ID = ol.ORDER_LINE_ITEM_ID 
-                                        INNER JOIN          PRICE_SCALE p 
+                                        INNER JOIN          `tdc-replication.medieval_times.price_scale` p 
                                         ON                                             p.PRICE_SCALE_ID = t.PRICE_SCALE_ID 
-                                        INNER JOIN          BUYER_TYPE b 
+                                        INNER JOIN          `tdc-replication.medieval_times.buyer_type` b 
                                         ON                                             t.BUYER_TYPE_ID = b.BUYER_TYPE_ID 
-                                        INNER JOIN          EVENT e  
+                                        INNER JOIN          `tdc-replication.medieval_times.event` e  
                                         ON                                             e.EVENT_ID = ol.EVENT_ID 
                                         AND                                          e.EVENT_CLASS_CODE = 'P' 
-                                        INNER JOIN          EVENT_CATEGORY ec 
+                                        INNER JOIN          `tdc-replication.medieval_times.event_category` ec 
                                         ON                                             e.EVENT_CATEGORY_ID = ec.EVENT_CATEGORY_ID 
-                                        INNER JOIN          PATRON_ORDER o 
+                                        INNER JOIN          `tdc-replication.medieval_times.patron_order` o 
                                         ON                                             o.ORDER_ID = ol.ORDER_ID 
-                                        LEFT JOIN              Service_Charge_Item si 
+                                        LEFT JOIN              `tdc-replication.medieval_times.service_charge_item` si 
                                         ON                                             si.TICKET_ID = t.TICKET_ID  
                                         AND                                          si.NEGATING_SERVICE_CHRG_ITEM_ID IS NULL 
-                                        LEFT JOIN              Service_Charge s 
+                                        LEFT JOIN              `tdc-replication.medieval_times.service_charge` s 
                                         ON                                             s.SERVICE_CHARGE_ID = si.SERVICE_CHARGE_ID 
                                         WHERE                   t.REMOVE_ORDER_LINE_ITEM_ID IS NULL  
                                         GROUP BY            e.Supplier_Id, 
@@ -711,8 +713,8 @@ namespace BQ_ACECommerce
                                                     t.TRANSACTION_ID, 
                                                     t.TICKET_ID";
 
-                string queryTicketsArchive = @"INSERT INTO tbl_MKTECommTicketDetailArchive (ARCHIVED_DATE_TIME, EVENT_ID, EVENT_CODE, EVENT_DATE_TIME, SUPPLIER_ID, PATRON_ACCOUNT_ID, ORDER_ID, PRICE_SCALE, BUYER_TYPE_CODE, BUYER_TYPE_DESC, BUYER_TYPE_GROUP_ID, REPORT_BUYER_TYPE_GROUP_ID, DISPLAY_INDICATOR, TAX_EXEMPT, TICKET_ID, TRANSACTION_ID, PAYMENT_STATUS_CODE, TICKET_PRICE, CONV_FEE, SALES_TAX, GRATUITY, ALLOCATION, INC_SALES_TAX, TICKET_COUNT, Ticket_Update_Status, Ticket_Updated_Dtm, Response_Object, Insert_Dtm)
-                                        SELECT NOW(), EVENT_ID, EVENT_CODE, EVENT_DATE_TIME, SUPPLIER_ID, PATRON_ACCOUNT_ID, ORDER_ID, PRICE_SCALE, BUYER_TYPE_CODE, BUYER_TYPE_DESC, BUYER_TYPE_GROUP_ID, REPORT_BUYER_TYPE_GROUP_ID, DISPLAY_INDICATOR, TAX_EXEMPT, TICKET_ID, TRANSACTION_ID, PAYMENT_STATUS_CODE, TICKET_PRICE, CONV_FEE, SALES_TAX, GRATUITY, ALLOCATION, INC_SALES_TAX, TICKET_COUNT, Ticket_Update_Status, Ticket_Updated_Dtm, Response_Object, Insert_Dtm FROM tbl_MKTECommTicketDetail
+                string queryTicketsArchive = @"INSERT INTO tbl_MKTECommTicketDetailArchive (ARCHIVED_DATE_TIME, EVENT_ID, EVENT_CODE, EVENT_DATE_TIME, SUPPLIER_ID, PATRON_ACCOUNT_ID, ORDER_ID, PRICE_SCALE, BUYER_TYPE_CODE, BUYER_TYPE_DESC, BUYER_TYPE_GROUP_ID, REPORT_BUYER_TYPE_GROUP_ID, DISPLAY_INDICATOR, TAX_EXEMPT, TICKET_ID, TRANSACTION_ID, PAYMENT_STATUS_CODE, TICKET_PRICE, CONV_FEE, SALES_TAX, GRATUITY, ALLOCATION, INC_SALES_TAX, TICKET_COUNT, Ticket_Update_Status, Ticket_Updated_Dtm, bq_last_updated_date, Response_Object, Insert_Dtm)
+                                        SELECT GETDATE(), EVENT_ID, EVENT_CODE, EVENT_DATE_TIME, SUPPLIER_ID, PATRON_ACCOUNT_ID, ORDER_ID, PRICE_SCALE, BUYER_TYPE_CODE, BUYER_TYPE_DESC, BUYER_TYPE_GROUP_ID, REPORT_BUYER_TYPE_GROUP_ID, DISPLAY_INDICATOR, TAX_EXEMPT, TICKET_ID, TRANSACTION_ID, PAYMENT_STATUS_CODE, TICKET_PRICE, CONV_FEE, SALES_TAX, GRATUITY, ALLOCATION, INC_SALES_TAX, TICKET_COUNT, Ticket_Update_Status, Ticket_Updated_Dtm, bq_last_updated_date, Response_Object, Insert_Dtm FROM tbl_MKTECommTicketDetail
                                         ;
                                         TRUNCATE TABLE tbl_MKTECommTicketDetail";
 
@@ -722,7 +724,7 @@ namespace BQ_ACECommerce
                 string queryTicketOrders = @"select o.order_id, o.order_email, o.Attending_Patron_Account_id, o.coupon, 
                         max(o.transactionid) as transactionid,
                         sum(t.ticket_price) as TicketDetailTotalPrice,
-                        max(o.Tickets_Value) as TicketsValue, max(o.UpSells_Value) as UpSellsValue, sum(t.SALES_TAX) as SalesTax, max(o.Order_Date) as OrderDate, max(o.Insert_Dtm) as InsertDtm, max(o.last_updated_dtm) as LastUpdatedDtm
+                        max(o.Tickets_Value) as TicketsValue, max(o.UpSells_Value) as UpSellsValue, sum(t.SALES_TAX) as SalesTax, max(o.Order_Date) as OrderDate, max(o.Insert_Dtm) as InsertDtm, max(o.bq_last_updated_date) as BQ_LastUpdatedDtm
                         from tbl_MKTECommTicketDetail t
                         inner join tbl_MKTECommOrderInfo o on t.order_id = o.order_id
                         where o.order_update_status = 'P'
@@ -767,34 +769,42 @@ namespace BQ_ACECommerce
                                                     WHERE EVENT_CODE NOT LIKE '%GIFTCERT%'
                                                     AND EVENT_CODE NOT LIKE '%BULK%'
                                                 )
-                                                SELECT MAX(a.TRANSACTION_ID) as MAX_TRANSACTION_ID,  MAX(a.LAST_UPDATED_DATE) as LAST_UPDATED_DATE, b.ORDER_ID, fe.EMAIL, 
-                                                            fe.ATTENDING_PATRON_ACCOUNT_ID,  
-                                                            fe.DELIVERY_METHOD_CODE, o.SUPPLIER_ID, 'N' as CELEBRATING, 
-                                                            MAX(CASE WHEN p.PRICE_SCALE_CODE <> 'NONADM' THEN CONCAT(p.PUBLIC_DESCRIPTION, CASE WHEN p.PUBLIC_DESCRIPTION <> 'General Admission' THEN ' Upgrade' ELSE '' END)  ELSE NULL END) AS PACKAGE_TYPE,
-                                                            SUM(CASE WHEN (bt.DESCRIPTION NOT LIKE ('%Child%') AND p.PRICE_SCALE_CODE <> 'NONADM') THEN 1 ELSE 0 END) AS ADULT_TICKETS,
-                                                            SUM(CASE WHEN (bt.DESCRIPTION LIKE ('%Child%') AND p.PRICE_SCALE_CODE <> 'NONADM')THEN 1 ELSE 0 END) AS CHILD_TICKETS,
-                                                            SUM(CASE WHEN (bt.DISPLAY_INDICATOR = 'A' AND p.PRICE_SCALE_CODE IN ('GA','ROYAL','CELEB','KINGS','QUEENS')) THEN PRICE ELSE 0.00 END) + 
-                                                                SUM(CASE WHEN (bt.DISPLAY_INDICATOR = 'C' AND p.PRICE_SCALE_CODE IN ('GA','ROYAL','CELEB','KINGS','QUEENS')) THEN PRICE ELSE 0.00 END) AS TICKET_VALUE,
-                                                            SUM(
-                                                                CASE    WHEN p.PRICE_SCALE_CODE = 'ROYAL' AND bt.DESCRIPTION NOT LIKE '%Military%' THEN 15.00
-                                                                        WHEN p.PRICE_SCALE_CODE = 'CELEB' AND bt.DESCRIPTION NOT LIKE '%Military%' THEN 22.00
-                                                                        WHEN p.PRICE_SCALE_CODE IN ('QUEENS','KINGS') AND bt.DESCRIPTION NOT LIKE '%Military%' THEN 27.00
-                                                                ELSE 0 END) AS PACKAGE_VALUE,
-                                                            IFNULL(MAX(COUPON_CODE),'') as COUPON,
-                                                            SUM(CASE WHEN p.PRICE_SCALE_CODE = 'NONADM' AND bt.DISPLAY_INDICATOR <> 'T' THEN PRICE ELSE 0.00 END) AS UPSELLS_VALUE, 
-                                                            '' as UPSELLS_DATA,
-                                                            o.ORDER_DATE,
-                                                            e.EVENT_DATE,
-                                                            CASE WHEN ac.ACCOUNT_TYPE_CODE = 'IND' THEN 'IND' ELSE act.PATRON_ACCOUNT_TYPE_CODE END AS GUEST_TYPE,
-                                                            ec.EVENT_CATEGORY_CODE as EVENT_TYPE,
-                                                            ag.DESCRIPTION as Agency
+                                                SELECT 
+                                                        MAX(a.TRANSACTION_ID) as MAX_TRANSACTION_ID,  
+                                                        MAX(a.LAST_UPDATED_DATE) as LAST_UPDATED_DATE, 
+                                                        MAX(a.bq_last_updated_date) as bq_last_updated_date, 
+                                                        b.ORDER_ID, 
+                                                        fe.EMAIL, 
+                                                        fe.ATTENDING_PATRON_ACCOUNT_ID,  
+                                                        fe.DELIVERY_METHOD_CODE, o.SUPPLIER_ID, 'N' as CELEBRATING, 
+                                                        MAX(CASE WHEN p.PRICE_SCALE_CODE <> 'NONADM' THEN CONCAT(p.PUBLIC_DESCRIPTION, CASE WHEN p.PUBLIC_DESCRIPTION <> 'General Admission' THEN ' Upgrade' ELSE '' END)  ELSE NULL END) AS PACKAGE_TYPE,
+                                                        SUM(CASE WHEN (bt.DESCRIPTION NOT LIKE ('%Child%') AND p.PRICE_SCALE_CODE <> 'NONADM') THEN 1 ELSE 0 END) AS ADULT_TICKETS,
+                                                        SUM(CASE WHEN (bt.DESCRIPTION LIKE ('%Child%') AND p.PRICE_SCALE_CODE <> 'NONADM')THEN 1 ELSE 0 END) AS CHILD_TICKETS,
+                                                        SUM(CASE WHEN (bt.DISPLAY_INDICATOR = 'A' AND p.PRICE_SCALE_CODE IN ('GA','ROYAL','CELEB','KINGS','QUEENS')) THEN PRICE ELSE 0.00 END) + 
+                                                            SUM(CASE WHEN (bt.DISPLAY_INDICATOR = 'C' AND p.PRICE_SCALE_CODE IN ('GA','ROYAL','CELEB','KINGS','QUEENS')) THEN PRICE ELSE 0.00 END) AS TICKET_VALUE,
+                                                        SUM(
+                                                            CASE    WHEN p.PRICE_SCALE_CODE = 'ROYAL' AND bt.DESCRIPTION NOT LIKE '%Military%' THEN 15.00
+                                                                    WHEN p.PRICE_SCALE_CODE = 'CELEB' AND bt.DESCRIPTION NOT LIKE '%Military%' THEN 22.00
+                                                                    WHEN p.PRICE_SCALE_CODE IN ('QUEENS','KINGS') AND bt.DESCRIPTION NOT LIKE '%Military%' THEN 27.00
+                                                            ELSE 0 END) AS PACKAGE_VALUE,
+                                                        IFNULL(MAX(COUPON_CODE),'') as COUPON,
+                                                        SUM(CASE WHEN p.PRICE_SCALE_CODE = 'NONADM' AND bt.DISPLAY_INDICATOR <> 'T' THEN PRICE ELSE 0.00 END) AS UPSELLS_VALUE, 
+                                                        '' as UPSELLS_DATA,
+                                                        o.ORDER_DATE,
+                                                        e.EVENT_DATE,
+                                                        CASE WHEN ac.ACCOUNT_TYPE_CODE = 'IND' THEN 'IND' ELSE act.PATRON_ACCOUNT_TYPE_CODE END AS GUEST_TYPE,
+                                                        ec.EVENT_CATEGORY_CODE as EVENT_TYPE,
+                                                        ag.DESCRIPTION as Agency
                                                 FROM	
                                                 (SELECT ORDER_ID, order_line_item_id, TRANSACTION_ID, EVENT_ID FROM `tdc-replication.medieval_times.order_line_item` WHERE ORDER_ID IN  ";
+
                 string queryOrdersSelectPart2All = @"   (SELECT ORDER_ID FROM `tdc-replication.medieval_times.order_line_item` WHERE Transaction_Id IN 
                                                             (SELECT TRANSACTION_ID FROM `tdc-replication.medieval_times.transaction`  WHERE 
-                                                            bq_last_updated_date > DATETIME_SUB(DATETIME('<Last_Updated_Dtm>'), INTERVAL 5 MINUTE)) )
+                                                            bq_last_updated_date > DATETIME_SUB(DATETIME('<BQ_Last_Updated_Dtm>'), INTERVAL 5 MINUTE)) )
                                                         ) b
                                                     ";
+                
+
                 string queryOrdersSelectPart2Override = @"   (SELECT ORDER_ID FROM `tdc-replication.medieval_times.order_line_item` WHERE Transaction_Id IN (<TRANSACTIONLIST>)
                                                         )
                                                     ) b
@@ -838,33 +848,47 @@ namespace BQ_ACECommerce
                 string queryOrdersSelectWithOverrideString = queryOrdersSelectPart1 + queryOrdersSelectPart2Override + queryOrdersSelectPart3;
 
                 string queryOrdersVerifyString = "SELECT COUNT(*) as PreviousOrderCount FROM tbl_MKTECommOrderInfo WHERE TransactionId = <VALUE>  " +
-                                                " AND Last_Updated_Dtm BETWEEN dateadd(second,-1,'<Last_Updated_Dtm>') AND " +
-                                                " dateadd(second,1,'<Last_Updated_Dtm>')";
+                                                " AND bq_last_updated_date BETWEEN dateadd(second,-1,'<BQ_Last_Updated_Dtm>') AND " +
+                                                " dateadd(second,1,'<BQ_Last_Updated_Dtm>')";
 
-                string queryAccountsToUpdateString = @"SELECT TransactionId, Order_Id, AC_ID, LocationDesc as Castle, Celebrating, Adult_Tickets + Child_Tickets as Number_Of_Tickets, Adult_Tickets, Child_Tickets, Tickets_Value, Coupon, Package_Type, Package_Value, 
+                // Vince TODO: put this  back 
+                // string queryAccountsToUpdateString = @"SELECT TransactionId, Order_Id, AC_ID, LocationDesc as Castle, Celebrating, Adult_Tickets + Child_Tickets as Number_Of_Tickets, Adult_Tickets, Child_Tickets, Tickets_Value, Coupon, Package_Type, Package_Value, 
+                //                                     Package_Type, Upsells_Value, Upsells_Data, Order_Date, Event_Date,  Guest_Type, Event_Type, Agency
+                //                                     FROM  tbl_MKTECommOrderInfo a
+                //                                     INNER JOIN fusion.dbo.tbl_location b ON a.SUPPLIER_ID = b.SupplierId
+                //                                     WHERE Order_Update_Status = 'P' AND AC_Exists = 'Y' AND TRIM(ISNULL(AC_Active_List,'')) <> ''";
+
+                string queryAccountsToUpdateString = @"SELECT TransactionId, Order_Id, AC_ID, concat('Supplier ',a.SUPPLIER_ID ,' Location') as Castle, Celebrating, Adult_Tickets + Child_Tickets as Number_Of_Tickets, Adult_Tickets, Child_Tickets, Tickets_Value, Coupon, Package_Type, Package_Value, 
                                                     Package_Type, Upsells_Value, Upsells_Data, Order_Date, Event_Date,  Guest_Type, Event_Type, Agency
-                                                    FROM  tbl_MKTECommOrderInfo a
-                                                    INNER JOIN fusion.dbo.tbl_location b ON a.SUPPLIER_ID = b.SupplierId
-                                                    WHERE Order_Update_Status = 'P' AND AC_Exists = 'Y' AND TRIM(IFNULL(AC_Active_List,'')) <> ''";
+                                                    FROM  tbl_MKTECommOrderInfo a 
+                                                    WHERE Order_Update_Status = 'P' AND AC_Exists = 'Y' AND TRIM(ISNULL(AC_Active_List,'')) <> ''";
 
                 string queryOrderIdsListString = @"SELECT DISTINCT Order_Id 
                                                     FROM  tbl_MKTECommOrderInfo
-                                                    WHERE Order_Update_Status = 'P' AND AC_Exists = 'Y' AND TRIM(IFNULL(AC_Active_List,'')) <> ''";
+                                                    WHERE Order_Update_Status = 'P' AND AC_Exists = 'Y' AND TRIM(ISNULL(AC_Active_List,'')) <> ''";
 
-                string queryOrdersInsertString = "INSERT INTO tbl_MKTECommOrderInfo(TransactionId,Last_Updated_Dtm,Order_Id,Order_Email,Delivery_Type,SUPPLIER_ID,Celebrating,Adult_Tickets,Child_Tickets,Tickets_Value,Coupon,Package_Type,Package_Value,Upsells_Value,Upsells_Data,Order_Date,Event_Date,Guest_Type,Event_Type,Agency,Attending_Patron_Account_Id) SELECT <VALUES>";
+                string queryOrdersInsertString = "INSERT INTO tbl_MKTECommOrderInfo(TransactionId,Last_Updated_Dtm,bq_last_updated_date,Order_Id,Order_Email,Delivery_Type,SUPPLIER_ID,Celebrating,Adult_Tickets,Child_Tickets,Tickets_Value,Coupon,Package_Type,Package_Value,Upsells_Value,Upsells_Data,Order_Date,Event_Date,Guest_Type,Event_Type,Agency,Attending_Patron_Account_Id) SELECT <VALUES>";
 
-                string queryTicketsInsertString = "INSERT INTO tbl_MKTECommTicketDetail(TRANSACTION_ID, EVENT_ID, EVENT_CODE, EVENT_DATE_TIME, SUPPLIER_ID, PATRON_ACCOUNT_ID, ORDER_ID, PRICE_SCALE, BUYER_TYPE_CODE, BUYER_TYPE_DESC, BUYER_TYPE_GROUP_ID, REPORT_BUYER_TYPE_GROUP_ID, DISPLAY_INDICATOR, TAX_EXEMPT, TICKET_ID, PAYMENT_STATUS_CODE, TICKET_PRICE, CONV_FEE, SALES_TAX, GRATUITY, ALLOCATION, INC_SALES_TAX, TICKET_COUNT) SELECT <VALUES>";
+                string queryTicketsInsertString = "INSERT INTO tbl_MKTECommTicketDetail(TRANSACTION_ID, EVENT_ID, EVENT_CODE, EVENT_DATE_TIME, SUPPLIER_ID, PATRON_ACCOUNT_ID, ORDER_ID, PRICE_SCALE, BUYER_TYPE_CODE, BUYER_TYPE_DESC, BUYER_TYPE_GROUP_ID, REPORT_BUYER_TYPE_GROUP_ID, DISPLAY_INDICATOR, TAX_EXEMPT, TICKET_ID, PAYMENT_STATUS_CODE, TICKET_PRICE, CONV_FEE, SALES_TAX, GRATUITY, ALLOCATION, INC_SALES_TAX, TICKET_COUNT, bq_last_updated_date) SELECT <VALUES>";
 
+                // Vince TODO: put this back
+                // string queryUpdateOrdersToSkip = "UPDATE tbl_MKTECommOrderInfo SET Order_Update_Status = 'X' WHERE Order_Update_Status = 'P'; " +
+                //                                  "UPDATE tbl_MKTECommOrderInfo SET Order_Update_Status = 'S' WHERE Order_Update_Status = 'N' AND SUPPLIER_ID NOT IN " +
+                //                                     "(SELECT SupplierId FROM fusion.dbo.tbl_location WHERE EmailActive = 'Y'); " +
+                //                                     "UPDATE tbl_MKTECommOrderInfo SET Order_Update_Status = 'P' WHERE Order_Update_Status = 'N' AND SUPPLIER_ID IN " +
+                //                                     "(SELECT SupplierId FROM fusion.dbo.tbl_location WHERE EmailActive = 'Y')";
 
                 string queryUpdateOrdersToSkip = "UPDATE tbl_MKTECommOrderInfo SET Order_Update_Status = 'X' WHERE Order_Update_Status = 'P'; " +
-                                                 "UPDATE tbl_MKTECommOrderInfo SET Order_Update_Status = 'S' WHERE Order_Update_Status = 'N' AND SUPPLIER_ID NOT IN " +
-                                                    "(SELECT SupplierId FROM fusion.dbo.tbl_location WHERE EmailActive = 'Y'); " +
-                                                    "UPDATE tbl_MKTECommOrderInfo SET Order_Update_Status = 'P' WHERE Order_Update_Status = 'N' AND SUPPLIER_ID IN " +
-                                                    "(SELECT SupplierId FROM fusion.dbo.tbl_location WHERE EmailActive = 'Y')";
+                                                    "UPDATE tbl_MKTECommOrderInfo SET Order_Update_Status = 'P' WHERE Order_Update_Status = 'N' ";
 
-                string queryOrdersToProcessString = @"SELECT TransactionId,Last_Updated_Dtm,Order_Id,Order_Email,Delivery_Type,Celebrating,Adult_Tickets,Child_Tickets,Tickets_Value,Coupon,Package_Type,Package_Value,Upsells_Value,Upsells_Data,Order_Date,Event_Date,Guest_Type,Event_Type,Agency, LocationDesc as Castle
-                                                    FROM (SELECT * FROM tbl_MKTECommOrderInfo WHERE Order_Update_Status = 'P') a 
-                                                    INNER JOIN fusion.dbo.tbl_location b ON a.SUPPLIER_ID = b.SupplierId;";
+                // Vince TODO: put this back
+                // string queryOrdersToProcessString = @"SELECT TransactionId,Last_Updated_Dtm,bq_last_updated_date,Order_Id,Order_Email,Delivery_Type,Celebrating,Adult_Tickets,Child_Tickets,Tickets_Value,Coupon,Package_Type,Package_Value,Upsells_Value,Upsells_Data,Order_Date,Event_Date,Guest_Type,Event_Type,Agency, LocationDesc as Castle
+                //                                     FROM (SELECT * FROM tbl_MKTECommOrderInfo WHERE Order_Update_Status = 'P') a 
+                //                                     INNER JOIN fusion.dbo.tbl_location b ON a.SUPPLIER_ID = b.SupplierId;";
+
+                string queryOrdersToProcessString = @"SELECT TransactionId,Last_Updated_Dtm,bq_last_updated_date,Order_Id,Order_Email,Delivery_Type,Celebrating,Adult_Tickets,Child_Tickets,Tickets_Value,Coupon,Package_Type,Package_Value,Upsells_Value,Upsells_Data,Order_Date,Event_Date,Guest_Type,Event_Type,Agency, 
+                                                    concat('Supplier ',a.SUPPLIER_ID ,' Location') as Castle
+                                                    FROM (SELECT * FROM tbl_MKTECommOrderInfo WHERE Order_Update_Status = 'P') a ";
 
                 string queryOrderUpdateString = "UPDATE tbl_MKTECommOrderInfo SET Order_Update_Status = '<Order_Update_Status>', Order_Updated_Dtm = CURRENT_TIMESTAMP, Response_Object = '<Response_Object>' WHERE TransactionId = <MaxTransactionId>";
 
@@ -877,7 +901,7 @@ namespace BQ_ACECommerce
 
                 string queryRecordsMaintenanceString = "DELETE FROM tbl_MKTECommTicketDetailArchive WHERE Archived_Date_Time < dateadd(day,-<ConfirmationTrimInterval>,getdate()); " +
 
-                                                        "DELETE FROM tbl_MKTECommOrderInfo WHERE Last_Updated_Dtm < dateadd(day,-<ConfirmationTrimInterval>,getdate()); " +
+                                                        "DELETE FROM tbl_MKTECommOrderInfo WHERE bq_last_updated_date < dateadd(day,-<ConfirmationTrimInterval>,getdate()); " +
 
                                                         "DELETE FROM tbl_MKTECommOrderInfoLog WHERE LogDate < dateadd(day,-<ConfirmationTrimInterval>,getdate()); ";
 
@@ -896,7 +920,7 @@ namespace BQ_ACECommerce
 
                         if (!loggingSettings.OverrideTranDate)
                         {
-                            SqlDataAdapter daMaxTransactionId = new SqlDataAdapter("SELECT MAX(Last_Updated_Dtm) as MaxLast_Updated_Dtm FROM tbl_MKTECommOrderInfo", emlConnection);
+                            SqlDataAdapter daMaxTransactionId = new SqlDataAdapter("SELECT MAX(bq_last_updated_date) as MaxLast_Updated_Dtm FROM tbl_MKTECommOrderInfo", emlConnection);
                             DataSet dsMaxTransactionId = new DataSet();
                             daMaxTransactionId.Fill(dsMaxTransactionId);
 
@@ -908,28 +932,40 @@ namespace BQ_ACECommerce
                         }
                         else
                         {
-                            maxLast_Updated_DtmString = loggingSettings.OverrideTranDateValue.ToString("yyyy-MM-dd HH:mm:ss");
+                            maxLast_Updated_DtmString = loggingSettings.OverrideTranDateValue.ToString();
                         }
+
+                        if (string.IsNullOrEmpty(maxLast_Updated_DtmString))
+                        {
+                            WriteConsoleMessage("Max last updated from Orders table is blank, process aborted!", connString);
+                            return;
+                        }
+                        else
+                        {
+                            DateTime dt = DateTime.Parse(maxLast_Updated_DtmString); // or TryParse for safety
+                            maxLast_Updated_DtmString = dt.ToString("yyyy-MM-dd HH:mm:ss");
+                        }
+
+                        var bq = new BigQueryHelper(root); // used for all queries below
 
                         if (!loggingSettings.ProcessOrdersTableOnly)
                         {
-                            var bq = new BigQueryHelper(root);
                             try
                             {
                                 int rowcount = 0;
                                 int totalRowcount = 0;
                                 string ordersString = string.Empty;
 
-                                if (loggingSettings.Debug) WriteConsoleMessage("Executing orders query in PV for ActiveCampaign updates", connString);
+                                if (loggingSettings.Debug) WriteConsoleMessage("Executing orders query in BQ for ActiveCampaign updates", connString);
 
 
                                 var ordersSql =
                                     loggingSettings.TransactionIdOverride ? queryOrdersSelectWithOverrideString.Replace("<TRANSACTIONLIST>", loggingSettings.TransactionList) :
-                                    queryOrdersSelectString.Replace("<Last_Updated_Dtm>", maxLast_Updated_DtmString);
+                                    queryOrdersSelectString.Replace("<BQ_Last_Updated_Dtm>", maxLast_Updated_DtmString);
 
                                 var bqResults = await bq.FetchTableAsync("tdc-replication", ordersSql);
                                 // now extract to DataTable/DataSet
-                                DataTable dtOrders = new DataTable("BigQueryData");
+                                DataTable dtOrders = new DataTable("Orders");
 
                                 // create columns dynamically from schema with type mapping
                                 foreach (var field in bqResults.Schema.Fields)
@@ -960,7 +996,7 @@ namespace BQ_ACECommerce
                                     if (!loggingSettings.TransactionIdOverride)
                                     {
                                         bProcessOrder = false;
-                                        SqlDataAdapter daVerifyOrder = new SqlDataAdapter(queryOrdersVerifyString.Replace("<VALUE>", r["MAX_TRANSACTION_ID"].ToString()).Replace("<Last_Updated_Dtm>", r["LAST_UPDATED_DATE"].ToString()), emlConnection);
+                                        SqlDataAdapter daVerifyOrder = new SqlDataAdapter(queryOrdersVerifyString.Replace("<VALUE>", r["MAX_TRANSACTION_ID"].ToString()).Replace("<BQ_Last_Updated_Dtm>", r["bq_last_updated_date"].ToString()), emlConnection);
                                         DataSet dsVerifyOrder = new DataSet();
                                         daVerifyOrder.Fill(dsVerifyOrder);
                                         DataRow r2 = dsVerifyOrder.Tables[0].Rows[0];
@@ -977,6 +1013,7 @@ namespace BQ_ACECommerce
                                         orderValuesString =
                                             r["MAX_TRANSACTION_ID"] + ", " +
                                             "'" + (r["LAST_UPDATED_DATE"]) + "', " +
+                                            "'" + (r["bq_last_updated_date"]) + "', " +
                                             r["ORDER_ID"] + ", " +
                                             "'" + r["EMAIL"].ToString().Replace("'", "''") + "', " +
                                             "'" + r["DELIVERY_METHOD_CODE"] + "', " +
@@ -1015,7 +1052,7 @@ namespace BQ_ACECommerce
                             {
                                 WriteConsoleMessage(ex.Message, connString);
                             }
-                            
+
 
                             try
                             {
@@ -1129,7 +1166,7 @@ namespace BQ_ACECommerce
                         }
                         else
                         {
-                            if (loggingSettings.Debug) WriteConsoleMessage("Skipped checking PV for orders due to runtime settings.  Check appSettings.json if this is unintended.", connString);
+                            if (loggingSettings.Debug) WriteConsoleMessage("Skipped checking BQ for orders due to runtime settings.  Check appSettings.json if this is unintended.", connString);
                         }
 
                         // at this point all order statuses have been applied:
@@ -1154,82 +1191,94 @@ namespace BQ_ACECommerce
                             DataSet dsOrderIdList = new DataSet();
                             daOrderIdList.Fill(dsOrderIdList);
 
-                            // turn dataset above into comma-separated list of order id's with single quotes
+                            // turn dataset above into comma-separated list of order id's 
                             string orderIdListString = string.Join(",",
                                 dsOrderIdList.Tables[0].AsEnumerable()
-                                .Select(row => $"'{row[0].ToString()}'")
+                                .Select(row => $"{row[0].ToString()}")
                             );
 
                             if (!String.IsNullOrEmpty(orderIdListString))
                             {
                                 queryTicketsSelectString = queryTicketsSelectString.Replace("<Order_Id_List>", orderIdListString);
 
-                                using (OracleConnection pvConnection = new OracleConnection(databaseSettings.PVConnectionString))
+                                try
                                 {
-                                    try
+
+                                    if (loggingSettings.Debug) WriteConsoleMessage("Executing tickets query in BQ for ActiveCampaign updates", connString);
+
+                                    var bqResults = await bq.FetchTableAsync("tdc-replication", queryTicketsSelectString.Replace("<Order_Id_List>", orderIdListString));
+                                     // now extract to DataTable/DataSet
+                                    DataTable dtTickets = new DataTable("Tickets");
+
+                                    // create columns dynamically from schema with type mapping
+                                    foreach (var field in bqResults.Schema.Fields)
                                     {
-
-                                        if (loggingSettings.Debug) WriteConsoleMessage("Executing tickets query in PV for ActiveCampaign updates", connString);
-
-                                        OracleDataAdapter daTickets = new OracleDataAdapter(
-                                            //loggingSettings.TransactionIdOverride ? queryOrdersSelectWithOverrideString.Replace("<TRANSACTIONLIST>", loggingSettings.TransactionList) :
-                                            queryTicketsSelectString.Replace("<Order_Id_List>", orderIdListString),
-                                                pvConnection);
-
-                                        DataSet dsTickets = new DataSet();
-                                        daTickets.SelectCommand.CommandTimeout = 900;
-                                        daTickets.Fill(dsTickets);
-
-                                        SqlCommand cmdInsertTicket = new SqlCommand();
-                                        cmdInsertTicket.Connection = emlConnection;
-                                        string ticketValuesString = string.Empty;
-
-                                        if (loggingSettings.Debug) WriteConsoleMessage("Inserting tickets into tbl_MKTECommTicketDetail", connString);
-                                        foreach (DataRow r in dsTickets.Tables[0].Rows)
+                                        Type columnType = BigQueryHelper.MapBigQueryTypeToDotNet(field.Type);
+                                        dtTickets.Columns.Add(field.Name, columnType);
+                                    }
+                                    // add data
+                                    foreach (var row in bqResults)
+                                    {
+                                        var dataRow = dtTickets.NewRow();
+                                        foreach (var field in bqResults.Schema.Fields)
                                         {
-
-                                            if (loggingSettings.Debug) WriteConsoleMessage("Inserting TransactionId to TicketDetails " + r["TRANSACTION_ID"].ToString(), connString);
-
-                                            ticketValuesString =
-                                                r["TRANSACTION_ID"] + ", " +
-                                                r["EVENT_ID"] + ", " +
-                                                "'" + r["EVENT_CODE"] + "', " +
-                                                "STR_TO_DATE('" + (r["EVENT_DATE_TIME"]) + "', '%m/%d/%Y %h:%i:%s %p'), " +
-                                                r["Supplier_Id"] + ", " +
-                                                r["PATRON_ACCOUNT_ID"] + ", " +
-                                                r["ORDER_ID"] + ", " +
-                                                "'" + r["PRICE_SCALE"] + "', " +
-                                                "'" + r["BUYER_TYPE_CODE"] + "', " +
-                                                "'" + r["BUYER_TYPE_DESC"].ToString().Replace("'", "''") + "', " +
-                                                r["BUYER_TYPE_GROUP_ID"] + ", " +
-                                                (Convert.IsDBNull(r["REPORT_BUYER_TYPE_GROUP_ID"]) ? "0" : r["REPORT_BUYER_TYPE_GROUP_ID"].ToString()) + "," +
-                                                "'" + r["DISPLAY_INDICATOR"] + "', " +
-                                                r["TAX_EXEMPT"] + ", " +
-                                                r["TICKET_ID"] + ", " +
-                                                "'" + r["PAYMENT_STATUS_CODE"] + "', " +
-                                                r["TICKET_PRICE"] + ", " +
-                                                r["CONV_FEE"] + ", " +
-                                                r["SALES_TAX"] + ", " +
-                                                r["INC_SALES_TAX"] + ", " +
-                                                r["GRATUITY"] + ", " +
-                                                r["ALLOCATION"] + ", " +
-                                                r["TICKET_COUNT"];
-
-                                            cmdInsertTicket.CommandText = queryTicketsInsertString.Replace("<VALUES>", ticketValuesString);
-                                            // temp log every query to find other null problem
-                                            // if (loggingSettings.Debug) WriteConsoleMessage(cmdInsertTicket.CommandText, connString);
-
-                                            cmdInsertTicket.ExecuteNonQuery();
-
+                                            dataRow[field.Name] = BigQueryHelper.ConvertBigQueryValue(row[field.Name], field.Type);
                                         }
-                                        if (loggingSettings.Debug) WriteConsoleMessage("Finished inserting tickets into tbl_MKTECommTicketDetail", connString);
+                                        dtTickets.Rows.Add(dataRow);
+                                    }
+
+
+                                    SqlCommand cmdInsertTicket = new SqlCommand();
+                                    cmdInsertTicket.Connection = emlConnection;
+                                    string ticketValuesString = string.Empty;
+
+                                    if (loggingSettings.Debug) WriteConsoleMessage("Inserting tickets into tbl_MKTECommTicketDetail", connString);
+                                    foreach (DataRow r in dtTickets.Rows)
+                                    {
+
+                                        if (loggingSettings.Debug) WriteConsoleMessage("Inserting TransactionId to TicketDetails " + r["TRANSACTION_ID"].ToString(), connString);
+
+                                        ticketValuesString =
+                                            r["TRANSACTION_ID"] + ", " +
+                                            r["EVENT_ID"] + ", " +
+                                            "'" + r["EVENT_CODE"] + "', " +
+                                            "'" + (r["EVENT_DATE_TIME"]) + "', " +
+                                            r["Supplier_Id"] + ", " +
+                                            r["PATRON_ACCOUNT_ID"] + ", " +
+                                            r["ORDER_ID"] + ", " +
+                                            "'" + r["PRICE_SCALE"] + "', " +
+                                            "'" + r["BUYER_TYPE_CODE"] + "', " +
+                                            "'" + r["BUYER_TYPE_DESC"].ToString().Replace("'", "''") + "', " +
+                                            r["BUYER_TYPE_GROUP_ID"] + ", " +
+                                            (Convert.IsDBNull(r["REPORT_BUYER_TYPE_GROUP_ID"]) ? "0" : r["REPORT_BUYER_TYPE_GROUP_ID"].ToString()) + "," +
+                                            "'" + r["DISPLAY_INDICATOR"] + "', " +
+                                            r["TAX_EXEMPT"] + ", " +
+                                            r["TICKET_ID"] + ", " +
+                                            "'" + r["PAYMENT_STATUS_CODE"] + "', " +
+                                            r["TICKET_PRICE"] + ", " +
+                                            r["CONV_FEE"] + ", " +
+                                            r["SALES_TAX"] + ", " +
+                                            r["INC_SALES_TAX"] + ", " +
+                                            r["GRATUITY"] + ", " +
+                                            r["ALLOCATION"] + ", " +
+                                            r["TICKET_COUNT"] + ", " +
+                                            "'" + r["bq_last_updated_date"] + "'";
+
+                                        cmdInsertTicket.CommandText = queryTicketsInsertString.Replace("<VALUES>", ticketValuesString);
+                                        // temp log every query to find other null problem
+                                        // if (loggingSettings.Debug) WriteConsoleMessage(cmdInsertTicket.CommandText, connString);
+
+                                        cmdInsertTicket.ExecuteNonQuery();
 
                                     }
-                                    catch (Exception ex)
-                                    {
-                                        WriteConsoleMessage($"Error inserting ticket details {ex.Message}", connString);
-                                    }
+                                    if (loggingSettings.Debug) WriteConsoleMessage("Finished inserting tickets into tbl_MKTECommTicketDetail", connString);
+
                                 }
+                                catch (Exception ex)
+                                {
+                                    WriteConsoleMessage($"Error inserting ticket details {ex.Message}", connString);
+                                }
+                                
                             }
                             else
                             {
@@ -1262,7 +1311,7 @@ namespace BQ_ACECommerce
                                 string emailAddress = r["order_Email"].ToString();
                                 string externalId = r["Attending_Patron_Account_id"].ToString();
                                 string createdDate = r["OrderDate"] == DBNull.Value ? null : ((DateTime)r["OrderDate"]).ToString("yyyy-MM-ddTHH:mm:ss");
-                                string updatedDate = r["LastUpdatedDtm"] == DBNull.Value ? null : ((DateTime)r["LastUpdatedDtm"]).ToString("yyyy-MM-ddTHH:mm:ss");
+                                string updatedDate = r["BQ_LastUpdatedDtm"] == DBNull.Value ? null : ((DateTime)r["BQ_LastUpdatedDtm"]).ToString("yyyy-MM-ddTHH:mm:ss");
 
                                 string connectionId = acAPISettings.ConnectionId;
                                 string customerId = "";
@@ -1614,7 +1663,7 @@ namespace BQ_ACECommerce
 
 
 
-                        if (loggingSettings.Debug) WriteConsoleMessage("Completed calls to PV.  See previous lines for any errors that may have occurred.", connString);
+                        if (loggingSettings.Debug) WriteConsoleMessage("Completed calls to BQ.  See previous lines for any errors that may have occurred.", connString);
                         WriteConsoleMessage("Ending Service", connString);
                     } // end try using (SqlConnection emlConnection = new SqlConnection(connString))
                     catch (Exception ex)
