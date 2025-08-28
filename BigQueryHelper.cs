@@ -2,18 +2,21 @@ using Google.Cloud.BigQuery.V2;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Google.Apis.Auth.OAuth2;
+using BQ_ACECommerce;
 
 
 public class BigQueryHelper
 {
     private readonly IConfiguration _config;
+    private readonly string _sqlConnString;
     private readonly ILogger? _logger;
 
     private readonly GoogleCredential _credential;
 
-    public BigQueryHelper(IConfiguration config /*, ILoggerFactory loggerFactory */)
+    public BigQueryHelper(IConfiguration config, string sqlConnString /*, ILoggerFactory loggerFactory */)
     {
         _config = config;
+        _sqlConnString = sqlConnString;
         //_logger = loggerFactory.CreateLogger<BigQueryHelper>();
 
         // var credPath = _config["GoogleCredentialFile"];
@@ -57,10 +60,11 @@ public class BigQueryHelper
                 BigQueryResults results = await job.GetQueryResultsAsync();
                 return results;
             }
-            
+
         }
         catch (Exception ex)
         {
+            LogHelper.WriteConsoleMessage($"FetchTableAsync returned error: {ex.Message} {ex.InnerException?.Message}", _sqlConnString);
             return null;
         }
 

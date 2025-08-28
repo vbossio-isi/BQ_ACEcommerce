@@ -258,7 +258,7 @@ namespace BQ_ACECommerce
                     else
                     {
                         apiResponse.ErrorMessage = await response.Content.ReadAsStringAsync();
-                        Program.WriteConsoleMessage($"{prefix} returned unsuccesful response {apiResponse.StatusCode} {apiResponse.ErrorMessage}", _dbConnectionString);
+                        LogHelper.WriteConsoleMessage($"{prefix} returned unsuccesful response {apiResponse.StatusCode} {apiResponse.ErrorMessage}", _dbConnectionString);
                         Task.Delay(_retryDelay).Wait(); // Wait before the next try
                     }
                 }
@@ -283,7 +283,7 @@ namespace BQ_ACECommerce
             {
 
                 //Console.WriteLine($"Error: {e.Message}");
-                Program.WriteConsoleMessage($"Error: {e.Message} posting to {URL}", _dbConnectionString);
+                LogHelper.WriteConsoleMessage($"Error: {e.Message} posting to {URL}", _dbConnectionString);
                 return null;
             }
         }
@@ -302,7 +302,7 @@ namespace BQ_ACECommerce
             catch (HttpRequestException e)
             {
                 //Console.WriteLine($"Error: {e.Message}");
-                Program.WriteConsoleMessage($"Error: {e.Message} getting contact with email {emailAddress}", _dbConnectionString);
+                LogHelper.WriteConsoleMessage($"Error: {e.Message} getting contact with email {emailAddress}", _dbConnectionString);
                 return null;
             }
         }
@@ -323,7 +323,7 @@ namespace BQ_ACECommerce
             catch (HttpRequestException e)
             {
                 //Console.WriteLine($"Error: {e.Message}");
-                Program.WriteConsoleMessage($"Error: {e.Message} {action} with email {emailAddress}", _dbConnectionString);
+                LogHelper.WriteConsoleMessage($"Error: {e.Message} {action} with email {emailAddress}", _dbConnectionString);
                 return null;
             }
         }
@@ -343,7 +343,7 @@ namespace BQ_ACECommerce
             catch (HttpRequestException e)
             {
                 //Console.WriteLine($"Error: {e.Message}");
-                Program.WriteConsoleMessage($"Error: {e.Message} getting Order with externalId {externalId}", _dbConnectionString);
+                LogHelper.WriteConsoleMessage($"Error: {e.Message} getting Order with externalId {externalId}", _dbConnectionString);
                 return null;
             }
         }
@@ -363,7 +363,7 @@ namespace BQ_ACECommerce
             {
 
                 //Console.WriteLine($"Error: {e.Message}");
-                Program.WriteConsoleMessage($"Error: {e.Message} posting to {URL}", _dbConnectionString);
+                LogHelper.WriteConsoleMessage($"Error: {e.Message} posting to {URL}", _dbConnectionString);
                 return null;
             }
         }
@@ -384,7 +384,7 @@ namespace BQ_ACECommerce
             {
 
                 //Console.WriteLine($"Error: {e.Message}");
-                Program.WriteConsoleMessage($"Error: {e.Message} updating order {existingOrderId}", _dbConnectionString);
+                LogHelper.WriteConsoleMessage($"Error: {e.Message} updating order {existingOrderId}", _dbConnectionString);
                 return null;
             }
         }
@@ -491,49 +491,7 @@ namespace BQ_ACECommerce
             return false;
         }
 
-        public static void WriteConsoleMessage(string msg, string sqlConnectionString)
-        {
-            WriteConsoleMessage(msg);
-            
-            using (SqlConnection emlConnection = new SqlConnection(sqlConnectionString))
-            {
-                emlConnection.Open();
 
-                // Use parameterized query to safely handle single quotes and avoid SQL injection
-                using (SqlCommand cmdWriteLog = new SqlCommand(
-                    "INSERT INTO tbl_MKTECommOrderInfoLog(LogData) VALUES (@msg)", 
-                    emlConnection))
-                {
-                    cmdWriteLog.Parameters.AddWithValue("@msg", msg);
-                    cmdWriteLog.ExecuteNonQuery();
-                }
-            }
-
-            /*
-            using (SqlConnection emlConnection = new SqlConnection(SqlconnectionString))
-            {
-                emlConnection.Open();
-                // logic below corrects it so that msg values that contain single quotes still work
-                using (SqlCommand cmdWriteLog = new SqlCommand("INSERT INTO tbl_MKTECommOrderInfoLog(LogData) VALUES (@msg)", emlConnection))
-                {
-                    cmdWriteLog.Parameters.AddWithValue("@msg", msg);
-                    cmdWriteLog.ExecuteNonQuery();
-                }
-                // SqlCommand cmdWriteLog = new SqlCommand("INSERT INTO tbl_MKTECommOrderInfoLog(LogData) VALUES ('" + msg + "')", emlConnection);
-                // cmdWriteLog.ExecuteNonQuery();
-            }
-            */
-        }
-
-        private static void WriteConsoleMessage(string msg)
-        {
-            Console.WriteLine(string.Concat(DateTime.Now, ": ", msg));
-        }
-
-        private static void WriteConsoleMessage(Exception ex)
-        {
-            Console.WriteLine(string.Concat(DateTime.Now, ": ", ex.Message));
-        }
 
         public static async Task Main(string[] args)
         {
@@ -565,7 +523,7 @@ namespace BQ_ACECommerce
                 .Bind(acAPISettings);
 
 
-            string connString = root["SqlConnectionString"];
+            string sqlConnString = root["SqlConnectionString"];
 
             /* sql server test code
                         // Use SqlClient
@@ -623,30 +581,30 @@ namespace BQ_ACECommerce
             }
             */
 
-            WriteConsoleMessage("Beginning Service", connString);
+            LogHelper.WriteConsoleMessage("Beginning Service", sqlConnString);
 
             if (loggingSettings.Debug)
             {
-                WriteConsoleMessage($"TransientFaultHandlingOptions.Enabled={transientFaultSettings.Enabled}", connString);
-                WriteConsoleMessage($"TransientFaultHandlingOptions.AutoRetryDelay={transientFaultSettings.AutoRetryDelay}", connString);
-                WriteConsoleMessage($"DatabaseSettings.ConnectionString={databaseSettings.PVConnectionString}", connString);
-                WriteConsoleMessage($"ActiveCampaignAPISettings.ApiKey={acAPISettings.ApiKey}", connString);
-                WriteConsoleMessage($"ActiveCampaignAPISettings.PostURL={acAPISettings.URL}", connString);
-                WriteConsoleMessage($"ActiveCampaignAPISettings.UseRety={acAPISettings.UseRetry}", connString);
-                WriteConsoleMessage($"ActiveCampaignAPISettings.MaxRetries={acAPISettings.MaxRetries}", connString);
-                WriteConsoleMessage($"ActiveCampaignAPISettings.RetryWaitTime={acAPISettings.RetryWaitTime}", connString);
-                WriteConsoleMessage($"LogLevel={loggingSettings.LogLevel}", connString);
-                WriteConsoleMessage($"Debug={loggingSettings.Debug}", connString);
-                WriteConsoleMessage($"UseDebugEmail={loggingSettings.UseDebugEmail}", connString);
-                WriteConsoleMessage($"DebugEmail={loggingSettings.DebugEmail}", connString);
-                WriteConsoleMessage($"DryRun={loggingSettings.DryRun}", connString);
-                WriteConsoleMessage($"OverrideTranDate={loggingSettings.OverrideTranDate}", connString);
-                WriteConsoleMessage($"OverrideTranDateValue={loggingSettings.OverrideTranDateValue}", connString);
-                WriteConsoleMessage($"ConfirmationTrimInterval={loggingSettings.ConfirmationTrimInterval}", connString);
-                WriteConsoleMessage($"ProcessOracleTableOnly={loggingSettings.ProcessOrdersTableOnly}", connString);
-                WriteConsoleMessage($"ProcessTicketsTableOnly={loggingSettings.ProcessTicketsTableOnly}", connString);
-                WriteConsoleMessage($"TransactionIdOverride={loggingSettings.TransactionIdOverride}", connString);
-                WriteConsoleMessage($"TransactionList={loggingSettings.TransactionList}", connString);
+                LogHelper.WriteConsoleMessage($"TransientFaultHandlingOptions.Enabled={transientFaultSettings.Enabled}", sqlConnString);
+                LogHelper.WriteConsoleMessage($"TransientFaultHandlingOptions.AutoRetryDelay={transientFaultSettings.AutoRetryDelay}", sqlConnString);
+                LogHelper.WriteConsoleMessage($"DatabaseSettings.ConnectionString={databaseSettings.PVConnectionString}", sqlConnString);
+                LogHelper.WriteConsoleMessage($"ActiveCampaignAPISettings.ApiKey={acAPISettings.ApiKey}", sqlConnString);
+                LogHelper.WriteConsoleMessage($"ActiveCampaignAPISettings.PostURL={acAPISettings.URL}", sqlConnString);
+                LogHelper.WriteConsoleMessage($"ActiveCampaignAPISettings.UseRety={acAPISettings.UseRetry}", sqlConnString);
+                LogHelper.WriteConsoleMessage($"ActiveCampaignAPISettings.MaxRetries={acAPISettings.MaxRetries}", sqlConnString);
+                LogHelper.WriteConsoleMessage($"ActiveCampaignAPISettings.RetryWaitTime={acAPISettings.RetryWaitTime}", sqlConnString);
+                LogHelper.WriteConsoleMessage($"LogLevel={loggingSettings.LogLevel}", sqlConnString);
+                LogHelper.WriteConsoleMessage($"Debug={loggingSettings.Debug}", sqlConnString);
+                LogHelper.WriteConsoleMessage($"UseDebugEmail={loggingSettings.UseDebugEmail}", sqlConnString);
+                LogHelper.WriteConsoleMessage($"DebugEmail={loggingSettings.DebugEmail}", sqlConnString);
+                LogHelper.WriteConsoleMessage($"DryRun={loggingSettings.DryRun}", sqlConnString);
+                LogHelper.WriteConsoleMessage($"OverrideTranDate={loggingSettings.OverrideTranDate}", sqlConnString);
+                LogHelper.WriteConsoleMessage($"OverrideTranDateValue={loggingSettings.OverrideTranDateValue}", sqlConnString);
+                LogHelper.WriteConsoleMessage($"ConfirmationTrimInterval={loggingSettings.ConfirmationTrimInterval}", sqlConnString);
+                LogHelper.WriteConsoleMessage($"ProcessOracleTableOnly={loggingSettings.ProcessOrdersTableOnly}", sqlConnString);
+                LogHelper.WriteConsoleMessage($"ProcessTicketsTableOnly={loggingSettings.ProcessTicketsTableOnly}", sqlConnString);
+                LogHelper.WriteConsoleMessage($"TransactionIdOverride={loggingSettings.TransactionIdOverride}", sqlConnString);
+                LogHelper.WriteConsoleMessage($"TransactionList={loggingSettings.TransactionList}", sqlConnString);
             }
 
             if (TimeToRun())
@@ -798,10 +756,17 @@ namespace BQ_ACECommerce
                                                 FROM	
                                                 (SELECT ORDER_ID, order_line_item_id, TRANSACTION_ID, EVENT_ID FROM `tdc-replication.medieval_times.order_line_item` WHERE ORDER_ID IN  ";
 
-                string queryOrdersSelectPart2All = @"   (SELECT ORDER_ID FROM `tdc-replication.medieval_times.order_line_item` WHERE Transaction_Id IN 
-                                                            (SELECT TRANSACTION_ID FROM `tdc-replication.medieval_times.transaction`  WHERE 
-                                                            bq_last_updated_date > DATETIME_SUB(DATETIME('<BQ_Last_Updated_Dtm>'), INTERVAL 5 MINUTE)) )
-                                                        ) b
+                // string queryOrdersSelectPart2All = @"   (SELECT ORDER_ID FROM `tdc-replication.medieval_times.order_line_item` WHERE Transaction_Id IN 
+                //                                             (SELECT TRANSACTION_ID FROM `tdc-replication.medieval_times.transaction`  WHERE 
+                //                                             bq_last_updated_date > DATETIME_SUB(DATETIME('<BQ_Last_Updated_Dtm>'), INTERVAL 5 MINUTE)) )
+                //                                         ) b
+                //                                     ";
+
+                string queryOrdersSelectPart2All = @"   (SELECT ORDER_ID FROM `tdc-replication.medieval_times.order_line_item` WHERE ORDER_ID IN 
+                        (
+43261414
+)
+                                                        ) ) b
                                                     ";
                 
 
@@ -851,17 +816,12 @@ namespace BQ_ACECommerce
                                                 " AND bq_last_updated_date BETWEEN dateadd(second,-1,'<BQ_Last_Updated_Dtm>') AND " +
                                                 " dateadd(second,1,'<BQ_Last_Updated_Dtm>')";
 
-                // Vince TODO: put this  back 
-                // string queryAccountsToUpdateString = @"SELECT TransactionId, Order_Id, AC_ID, LocationDesc as Castle, Celebrating, Adult_Tickets + Child_Tickets as Number_Of_Tickets, Adult_Tickets, Child_Tickets, Tickets_Value, Coupon, Package_Type, Package_Value, 
-                //                                     Package_Type, Upsells_Value, Upsells_Data, Order_Date, Event_Date,  Guest_Type, Event_Type, Agency
-                //                                     FROM  tbl_MKTECommOrderInfo a
-                //                                     INNER JOIN fusion.dbo.tbl_location b ON a.SUPPLIER_ID = b.SupplierId
-                //                                     WHERE Order_Update_Status = 'P' AND AC_Exists = 'Y' AND TRIM(ISNULL(AC_Active_List,'')) <> ''";
-
-                string queryAccountsToUpdateString = @"SELECT TransactionId, Order_Id, AC_ID, concat('Supplier ',a.SUPPLIER_ID ,' Location') as Castle, Celebrating, Adult_Tickets + Child_Tickets as Number_Of_Tickets, Adult_Tickets, Child_Tickets, Tickets_Value, Coupon, Package_Type, Package_Value, 
+                string queryAccountsToUpdateString = @"SELECT TransactionId, Order_Id, AC_ID, LocationDesc as Castle, Celebrating, Adult_Tickets + Child_Tickets as Number_Of_Tickets, Adult_Tickets, Child_Tickets, Tickets_Value, Coupon, Package_Type, Package_Value, 
                                                     Package_Type, Upsells_Value, Upsells_Data, Order_Date, Event_Date,  Guest_Type, Event_Type, Agency
-                                                    FROM  tbl_MKTECommOrderInfo a 
+                                                    FROM  tbl_MKTECommOrderInfo a
+                                                    INNER JOIN fusion.dbo.tbl_location b ON a.SUPPLIER_ID = b.SupplierId
                                                     WHERE Order_Update_Status = 'P' AND AC_Exists = 'Y' AND TRIM(ISNULL(AC_Active_List,'')) <> ''";
+
 
                 string queryOrderIdsListString = @"SELECT DISTINCT Order_Id 
                                                     FROM  tbl_MKTECommOrderInfo
@@ -871,24 +831,17 @@ namespace BQ_ACECommerce
 
                 string queryTicketsInsertString = "INSERT INTO tbl_MKTECommTicketDetail(TRANSACTION_ID, EVENT_ID, EVENT_CODE, EVENT_DATE_TIME, SUPPLIER_ID, PATRON_ACCOUNT_ID, ORDER_ID, PRICE_SCALE, BUYER_TYPE_CODE, BUYER_TYPE_DESC, BUYER_TYPE_GROUP_ID, REPORT_BUYER_TYPE_GROUP_ID, DISPLAY_INDICATOR, TAX_EXEMPT, TICKET_ID, PAYMENT_STATUS_CODE, TICKET_PRICE, CONV_FEE, SALES_TAX, GRATUITY, ALLOCATION, INC_SALES_TAX, TICKET_COUNT, bq_last_updated_date) SELECT <VALUES>";
 
-                // Vince TODO: put this back
-                // string queryUpdateOrdersToSkip = "UPDATE tbl_MKTECommOrderInfo SET Order_Update_Status = 'X' WHERE Order_Update_Status = 'P'; " +
-                //                                  "UPDATE tbl_MKTECommOrderInfo SET Order_Update_Status = 'S' WHERE Order_Update_Status = 'N' AND SUPPLIER_ID NOT IN " +
-                //                                     "(SELECT SupplierId FROM fusion.dbo.tbl_location WHERE EmailActive = 'Y'); " +
-                //                                     "UPDATE tbl_MKTECommOrderInfo SET Order_Update_Status = 'P' WHERE Order_Update_Status = 'N' AND SUPPLIER_ID IN " +
-                //                                     "(SELECT SupplierId FROM fusion.dbo.tbl_location WHERE EmailActive = 'Y')";
-
                 string queryUpdateOrdersToSkip = "UPDATE tbl_MKTECommOrderInfo SET Order_Update_Status = 'X' WHERE Order_Update_Status = 'P'; " +
-                                                    "UPDATE tbl_MKTECommOrderInfo SET Order_Update_Status = 'P' WHERE Order_Update_Status = 'N' ";
+                                                 "UPDATE tbl_MKTECommOrderInfo SET Order_Update_Status = 'S' WHERE Order_Update_Status = 'N' AND SUPPLIER_ID NOT IN " +
+                                                    "(SELECT SupplierId FROM fusion.dbo.tbl_location WHERE EmailActive = 'Y'); " +
+                                                    "UPDATE tbl_MKTECommOrderInfo SET Order_Update_Status = 'P' WHERE Order_Update_Status = 'N' AND SUPPLIER_ID IN " +
+                                                    "(SELECT SupplierId FROM fusion.dbo.tbl_location WHERE EmailActive = 'Y')";
 
-                // Vince TODO: put this back
-                // string queryOrdersToProcessString = @"SELECT TransactionId,Last_Updated_Dtm,bq_last_updated_date,Order_Id,Order_Email,Delivery_Type,Celebrating,Adult_Tickets,Child_Tickets,Tickets_Value,Coupon,Package_Type,Package_Value,Upsells_Value,Upsells_Data,Order_Date,Event_Date,Guest_Type,Event_Type,Agency, LocationDesc as Castle
-                //                                     FROM (SELECT * FROM tbl_MKTECommOrderInfo WHERE Order_Update_Status = 'P') a 
-                //                                     INNER JOIN fusion.dbo.tbl_location b ON a.SUPPLIER_ID = b.SupplierId;";
 
-                string queryOrdersToProcessString = @"SELECT TransactionId,Last_Updated_Dtm,bq_last_updated_date,Order_Id,Order_Email,Delivery_Type,Celebrating,Adult_Tickets,Child_Tickets,Tickets_Value,Coupon,Package_Type,Package_Value,Upsells_Value,Upsells_Data,Order_Date,Event_Date,Guest_Type,Event_Type,Agency, 
-                                                    concat('Supplier ',a.SUPPLIER_ID ,' Location') as Castle
-                                                    FROM (SELECT * FROM tbl_MKTECommOrderInfo WHERE Order_Update_Status = 'P') a ";
+                string queryOrdersToProcessString = @"SELECT TransactionId,Last_Updated_Dtm,bq_last_updated_date,Order_Id,Order_Email,Delivery_Type,Celebrating,Adult_Tickets,Child_Tickets,Tickets_Value,Coupon,Package_Type,Package_Value,Upsells_Value,Upsells_Data,Order_Date,Event_Date,Guest_Type,Event_Type,Agency, LocationDesc as Castle
+                                                    FROM (SELECT * FROM tbl_MKTECommOrderInfo WHERE Order_Update_Status = 'P') a 
+                                                    INNER JOIN fusion.dbo.tbl_location b ON a.SUPPLIER_ID = b.SupplierId;";
+
 
                 string queryOrderUpdateString = "UPDATE tbl_MKTECommOrderInfo SET Order_Update_Status = '<Order_Update_Status>', Order_Updated_Dtm = CURRENT_TIMESTAMP, Response_Object = '<Response_Object>' WHERE TransactionId = <MaxTransactionId>";
 
@@ -906,11 +859,11 @@ namespace BQ_ACECommerce
                                                         "DELETE FROM tbl_MKTECommOrderInfoLog WHERE LogDate < dateadd(day,-<ConfirmationTrimInterval>,getdate()); ";
 
 
-                using (SqlConnection emlConnection = new SqlConnection(connString))
+                using (SqlConnection emlConnection = new SqlConnection(sqlConnString))
                 {
                     try
                     {
-                        if (loggingSettings.Debug) WriteConsoleMessage("Opening connection to EML", connString);
+                        if (loggingSettings.Debug) LogHelper.WriteConsoleMessage("Opening connection to EML", sqlConnString);
                         emlConnection.Open();
 
                         SqlCommand cmdRecordsMaintenance = new SqlCommand(queryRecordsMaintenanceString.Replace("<ConfirmationTrimInterval>", loggingSettings.ConfirmationTrimInterval), emlConnection);
@@ -937,7 +890,7 @@ namespace BQ_ACECommerce
 
                         if (string.IsNullOrEmpty(maxLast_Updated_DtmString))
                         {
-                            WriteConsoleMessage("Max last updated from Orders table is blank, process aborted!", connString);
+                            LogHelper.WriteConsoleMessage("Max last updated from Orders table is blank, process aborted!", sqlConnString);
                             return;
                         }
                         else
@@ -946,7 +899,7 @@ namespace BQ_ACECommerce
                             maxLast_Updated_DtmString = dt.ToString("yyyy-MM-dd HH:mm:ss");
                         }
 
-                        var bq = new BigQueryHelper(root); // used for all queries below
+                        var bq = new BigQueryHelper(root, sqlConnString); // used for all queries below
 
                         if (!loggingSettings.ProcessOrdersTableOnly)
                         {
@@ -956,7 +909,7 @@ namespace BQ_ACECommerce
                                 int totalRowcount = 0;
                                 string ordersString = string.Empty;
 
-                                if (loggingSettings.Debug) WriteConsoleMessage("Executing orders query in BQ for ActiveCampaign updates", connString);
+                                if (loggingSettings.Debug) LogHelper.WriteConsoleMessage("Executing orders query in BQ for ActiveCampaign updates", sqlConnString);
 
 
                                 var ordersSql =
@@ -964,8 +917,13 @@ namespace BQ_ACECommerce
                                     queryOrdersSelectString.Replace("<BQ_Last_Updated_Dtm>", maxLast_Updated_DtmString);
 
                                 var bqResults = await bq.FetchTableAsync("tdc-replication", ordersSql);
+                                if (bqResults == null)
+                                {
+                                    LogHelper.WriteConsoleMessage("Fatal BigQuery error getting Orders - process aborted", sqlConnString);
+                                    return;
+                                }
                                 // now extract to DataTable/DataSet
-                                DataTable dtOrders = new DataTable("Orders");
+                                    DataTable dtOrders = new DataTable("Orders");
 
                                 // create columns dynamically from schema with type mapping
                                 foreach (var field in bqResults.Schema.Fields)
@@ -988,7 +946,7 @@ namespace BQ_ACECommerce
                                 cmdInsertOrder.Connection = emlConnection;
                                 string orderValuesString = string.Empty;
 
-                                if (loggingSettings.Debug) WriteConsoleMessage("Inserting orders into tbl_MKTECommOrderInfo", connString);
+                                if (loggingSettings.Debug) LogHelper.WriteConsoleMessage("Inserting orders into tbl_MKTECommOrderInfo", sqlConnString);
                                 foreach (DataRow r in dtOrders.Rows)
                                 {
                                     // allow order to be re-processed if overriding transaction id list
@@ -1008,7 +966,7 @@ namespace BQ_ACECommerce
 
                                     if (bProcessOrder)
                                     {
-                                        if (loggingSettings.Debug) WriteConsoleMessage("Inserting TransactionId " + r["MAX_TRANSACTION_ID"].ToString(), connString);
+                                        if (loggingSettings.Debug) LogHelper.WriteConsoleMessage("Inserting TransactionId " + r["MAX_TRANSACTION_ID"].ToString(), sqlConnString);
 
                                         orderValuesString =
                                             r["MAX_TRANSACTION_ID"] + ", " +
@@ -1039,24 +997,24 @@ namespace BQ_ACECommerce
                                     }
                                     else
                                     {
-                                        if (loggingSettings.Debug) WriteConsoleMessage($"Skipping TransactionId {r["MAX_TRANSACTION_ID"].ToString()} because it was already processed", connString);
+                                        if (loggingSettings.Debug) LogHelper.WriteConsoleMessage($"Skipping TransactionId {r["MAX_TRANSACTION_ID"].ToString()} because it was already processed", sqlConnString);
                                     }
                                 }
-                                if (loggingSettings.Debug) WriteConsoleMessage("Finished inserting orders into tbl_MKTECommOrderInfo", connString);
+                                if (loggingSettings.Debug) LogHelper.WriteConsoleMessage("Finished inserting orders into tbl_MKTECommOrderInfo", sqlConnString);
 
-                                if (loggingSettings.Debug) WriteConsoleMessage("Update orders to skip if location not active", connString);
+                                if (loggingSettings.Debug) LogHelper.WriteConsoleMessage("Update orders to skip if location not active", sqlConnString);
                                 SqlCommand cmdUpdateOrdersToSkip = new SqlCommand(queryUpdateOrdersToSkip, emlConnection);
                                 cmdUpdateOrdersToSkip.ExecuteNonQuery();
                             }
                             catch (Exception ex)
                             {
-                                WriteConsoleMessage(ex.Message, connString);
+                                LogHelper.WriteConsoleMessage(ex.Message, sqlConnString);
                             }
 
 
                             try
                             {
-                                if (loggingSettings.Debug) WriteConsoleMessage("Getting orders to process", connString);
+                                if (loggingSettings.Debug) LogHelper.WriteConsoleMessage("Getting orders to process", sqlConnString);
 
                                 SqlDataAdapter daOrdersToProcess = new SqlDataAdapter(queryOrdersToProcessString, emlConnection);
                                 DataSet dsOrdersToProcess = new DataSet();
@@ -1070,9 +1028,9 @@ namespace BQ_ACECommerce
 
                                     try
                                     {
-                                        if (loggingSettings.Debug) WriteConsoleMessage($"Checking existence and status of {r["Order_Email"].ToString()} in ActiveCampaign", connString);
+                                        if (loggingSettings.Debug) LogHelper.WriteConsoleMessage($"Checking existence and status of {r["Order_Email"].ToString()} in ActiveCampaign", sqlConnString);
 
-                                        var apiClient = new APIClient(acAPISettings, connString);
+                                        var apiClient = new APIClient(acAPISettings, sqlConnString);
                                         string url = acAPISettings.URL;
                                         string emailAddress = r["Order_Email"].ToString();
 
@@ -1099,7 +1057,7 @@ namespace BQ_ACECommerce
                                                     if (listsWithStatusOne != null && listsWithStatusOne != string.Empty)
                                                     {
                                                         ac_id = contactWithLists.ContactLists.FirstOrDefault(cl => cl.Status == "1")?.Contact;
-                                                        if (loggingSettings.Debug) WriteConsoleMessage($"Found {r["Order_Email"].ToString()} in ActiveCampaign with Id = {ac_id} active on at least one list", connString);
+                                                        if (loggingSettings.Debug) LogHelper.WriteConsoleMessage($"Found {r["Order_Email"].ToString()} in ActiveCampaign with Id = {ac_id} active on at least one list", sqlConnString);
                                                         SqlCommand daACData = new SqlCommand(queryOrderACDataString.Replace("<AC_Exists>", "Y").Replace("<AC_ID>", ac_id).Replace("<AC_Active_List>", listsWithStatusOne).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
                                                         daACData.ExecuteNonQuery();
                                                         isActive = true;
@@ -1107,7 +1065,7 @@ namespace BQ_ACECommerce
                                                     else
                                                     {
                                                         ac_id = contactWithLists.Contacts.FirstOrDefault()?.Id;
-                                                        if (loggingSettings.Debug) WriteConsoleMessage($"Found {r["Order_Email"].ToString()} in ActiveCampaign with Id = {ac_id} but no active lists", connString);
+                                                        if (loggingSettings.Debug) LogHelper.WriteConsoleMessage($"Found {r["Order_Email"].ToString()} in ActiveCampaign with Id = {ac_id} but no active lists", sqlConnString);
                                                         SqlCommand daACData = new SqlCommand(queryOrderACDataString.Replace("<AC_Exists>", "Y").Replace("<AC_ID>", ac_id).Replace("<Order_Update_Status>", "S").Replace("<AC_Active_List>", "").Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
                                                         daACData.ExecuteNonQuery();
                                                         isActive = false;
@@ -1129,7 +1087,7 @@ namespace BQ_ACECommerce
                                             else
                                             {
                                                 var responseContent = $"API error status: {response.StatusCode} {response.Content} {response.ErrorMessage}";
-                                                WriteConsoleMessage($"Could not get contact for transactionid {currentTransactionId}", connString);
+                                                LogHelper.WriteConsoleMessage($"Could not get contact for transactionid {currentTransactionId}", sqlConnString);
                                                 SqlCommand daOrderUpdateData = new SqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "E").Replace("<Response_Object>", responseContent).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
                                                 daOrderUpdateData.ExecuteNonQuery();
                                             }
@@ -1144,29 +1102,29 @@ namespace BQ_ACECommerce
                                                     daOrderUpdateData.ExecuteNonQuery();
                                                 }
                                             }
-                                            catch (Exception ex2) { WriteConsoleMessage($"We ignored an error within a catch block.  {ex2.Message}", connString); }
+                                            catch (Exception ex2) { LogHelper.WriteConsoleMessage($"We ignored an error within a catch block.  {ex2.Message}", sqlConnString); }
 
-                                            if (loggingSettings.Debug) WriteConsoleMessage($"An error occured while processing transaction ID {currentTransactionId}.  {ex.Message}", connString);
-                                            WriteConsoleMessage(ex.Message, connString);
+                                            if (loggingSettings.Debug) LogHelper.WriteConsoleMessage($"An error occured while processing transaction ID {currentTransactionId}.  {ex.Message}", sqlConnString);
+                                            LogHelper.WriteConsoleMessage(ex.Message, sqlConnString);
                                             isActive = false;
                                         }
                                     }
                                     catch (Exception ex)
                                     {
-                                        if (loggingSettings.Debug) WriteConsoleMessage("An error occured while constructing outgoing request for AC_ID.  See next record if an exception message is available.", connString);
-                                        WriteConsoleMessage(ex.Message, connString);
+                                        if (loggingSettings.Debug) LogHelper.WriteConsoleMessage("An error occured while constructing outgoing request for AC_ID.  See next record if an exception message is available.", sqlConnString);
+                                        LogHelper.WriteConsoleMessage(ex.Message, sqlConnString);
                                     }
                                 }
                             }
                             catch (Exception ex)
                             {
-                                WriteConsoleMessage(ex.Message, connString);
+                                LogHelper.WriteConsoleMessage(ex.Message, sqlConnString);
                             }
 
                         }
                         else
                         {
-                            if (loggingSettings.Debug) WriteConsoleMessage("Skipped checking BQ for orders due to runtime settings.  Check appSettings.json if this is unintended.", connString);
+                            if (loggingSettings.Debug) LogHelper.WriteConsoleMessage("Skipped checking BQ for orders due to runtime settings.  Check appSettings.json if this is unintended.", sqlConnString);
                         }
 
                         // at this point all order statuses have been applied:
@@ -1204,9 +1162,15 @@ namespace BQ_ACECommerce
                                 try
                                 {
 
-                                    if (loggingSettings.Debug) WriteConsoleMessage("Executing tickets query in BQ for ActiveCampaign updates", connString);
+                                    if (loggingSettings.Debug) LogHelper.WriteConsoleMessage("Executing tickets query in BQ for ActiveCampaign updates", sqlConnString);
 
                                     var bqResults = await bq.FetchTableAsync("tdc-replication", queryTicketsSelectString.Replace("<Order_Id_List>", orderIdListString));
+                                    if (bqResults == null)
+                                    {
+                                        LogHelper.WriteConsoleMessage("Fatal BigQuery error getting Tickets - process aborted", sqlConnString);
+                                        return;
+                                    }
+
                                      // now extract to DataTable/DataSet
                                     DataTable dtTickets = new DataTable("Tickets");
 
@@ -1232,11 +1196,11 @@ namespace BQ_ACECommerce
                                     cmdInsertTicket.Connection = emlConnection;
                                     string ticketValuesString = string.Empty;
 
-                                    if (loggingSettings.Debug) WriteConsoleMessage("Inserting tickets into tbl_MKTECommTicketDetail", connString);
+                                    if (loggingSettings.Debug) LogHelper.WriteConsoleMessage("Inserting tickets into tbl_MKTECommTicketDetail", sqlConnString);
                                     foreach (DataRow r in dtTickets.Rows)
                                     {
 
-                                        if (loggingSettings.Debug) WriteConsoleMessage("Inserting TransactionId to TicketDetails " + r["TRANSACTION_ID"].ToString(), connString);
+                                        if (loggingSettings.Debug) LogHelper.WriteConsoleMessage("Inserting TransactionId to TicketDetails " + r["TRANSACTION_ID"].ToString(), sqlConnString);
 
                                         ticketValuesString =
                                             r["TRANSACTION_ID"] + ", " +
@@ -1266,28 +1230,28 @@ namespace BQ_ACECommerce
 
                                         cmdInsertTicket.CommandText = queryTicketsInsertString.Replace("<VALUES>", ticketValuesString);
                                         // temp log every query to find other null problem
-                                        // if (loggingSettings.Debug) WriteConsoleMessage(cmdInsertTicket.CommandText, connString);
+                                        // if (loggingSettings.Debug) LogHelper.WriteConsoleMessage(cmdInsertTicket.CommandText, connString);
 
                                         cmdInsertTicket.ExecuteNonQuery();
 
                                     }
-                                    if (loggingSettings.Debug) WriteConsoleMessage("Finished inserting tickets into tbl_MKTECommTicketDetail", connString);
+                                    if (loggingSettings.Debug) LogHelper.WriteConsoleMessage("Finished inserting tickets into tbl_MKTECommTicketDetail", sqlConnString);
 
                                 }
                                 catch (Exception ex)
                                 {
-                                    WriteConsoleMessage($"Error inserting ticket details {ex.Message}", connString);
+                                    LogHelper.WriteConsoleMessage($"Error inserting ticket details {ex.Message}", sqlConnString);
                                 }
                                 
                             }
                             else
                             {
-                                WriteConsoleMessage($"No order ids found with tickets", connString);
+                                LogHelper.WriteConsoleMessage($"No order ids found with tickets", sqlConnString);
                             }
                         }
                         else
                         {
-                            if (loggingSettings.Debug) WriteConsoleMessage("Skipped getting Tickets for Orders due to runtime settings.  Check appSettings.json if this is unintended.", connString);
+                            if (loggingSettings.Debug) LogHelper.WriteConsoleMessage("Skipped getting Tickets for Orders due to runtime settings.  Check appSettings.json if this is unintended.", sqlConnString);
                         }
 
 
@@ -1301,10 +1265,10 @@ namespace BQ_ACECommerce
                         {
                             try
                             {
-                                var apiClient = new APIClient(acAPISettings, connString);
+                                var apiClient = new APIClient(acAPISettings, sqlConnString);
                                 string url = acAPISettings.URL;
 
-                                if (loggingSettings.Debug) WriteConsoleMessage($"Checking existence of {r["Order_Email"].ToString()} as an Ecomm Customer", connString);
+                                if (loggingSettings.Debug) LogHelper.WriteConsoleMessage($"Checking existence of {r["Order_Email"].ToString()} as an Ecomm Customer", sqlConnString);
 
                                 string currentTransactionId = r["transactionid"].ToString();
                                 string orderId = r["order_id"].ToString();
@@ -1340,7 +1304,7 @@ namespace BQ_ACECommerce
                                     else
                                     {
                                         var responseContent = $"API error status: {response.StatusCode} {response.Content} {response.ErrorMessage}";
-                                        WriteConsoleMessage(responseContent, connString);
+                                        LogHelper.WriteConsoleMessage(responseContent, sqlConnString);
                                         SqlCommand daOrderUpdateData = new SqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "E").Replace("<Response_Object>", responseContent).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
                                         daOrderUpdateData.ExecuteNonQuery();
                                         continue; // go to next row, do not process order if customer lookup failed
@@ -1366,7 +1330,7 @@ namespace BQ_ACECommerce
                                         // var options = new JsonSerializerOptions { WriteIndented = true };
                                         // string json = JsonSerializer.Serialize(wrapper, options);
                                         string json = JsonSerializer.Serialize(wrapper);
-                                        WriteConsoleMessage($"Creating new ECom customer {json}", connString);
+                                        LogHelper.WriteConsoleMessage($"Creating new ECom customer {json}", sqlConnString);
 
                                         ApiResponse createResponse = await apiClient.PostCustomerOrOrdersAsync("Create EComCustomer", url, json, "ecomCustomers"); // path is case sensitive
                                         if (createResponse.IsSuccess)
@@ -1385,7 +1349,7 @@ namespace BQ_ACECommerce
                                                     customerId = idElement.GetString();
                                                 }
                                             }
-                                            WriteConsoleMessage($"Customer id {customerId} created", connString);
+                                            LogHelper.WriteConsoleMessage($"Customer id {customerId} created", sqlConnString);
                                         }
                                         else
                                         {
@@ -1400,13 +1364,13 @@ namespace BQ_ACECommerce
                                     // double check that we have a valid customer id assigned
                                     if (string.IsNullOrEmpty(customerId))
                                     {
-                                        WriteConsoleMessage($"Customer id is blank for order {orderId}", connString);
+                                        LogHelper.WriteConsoleMessage($"Customer id is blank for order {orderId}", sqlConnString);
                                         SqlCommand daOrderUpdateData = new SqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "E").Replace("<Response_Object>", $"Customer id is blank for order {orderId}").Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
                                         daOrderUpdateData.ExecuteNonQuery();
                                         continue; // do not process if we don't have a valid customer
                                     }
 
-                                    WriteConsoleMessage($"Checking existence of order id {orderId} in Ecomm.", connString);
+                                    LogHelper.WriteConsoleMessage($"Checking existence of order id {orderId} in Ecomm.", sqlConnString);
 
                                     // see if external order id already exists
                                     var existingOrderId = "-1";
@@ -1426,14 +1390,14 @@ namespace BQ_ACECommerce
                                             {
                                                 processOrderToEcomm = true;
                                                 existingOrderId = orders[0].GetProperty("id").GetString();
-                                                WriteConsoleMessage($"ExternalOrderId {orderId} found with Ecom order id {existingOrderId}, order will be updated.", connString);
+                                                LogHelper.WriteConsoleMessage($"ExternalOrderId {orderId} found with Ecom order id {existingOrderId}, order will be updated.", sqlConnString);
 
                                                 SqlCommand daOrderUpdateData = new SqlCommand(queryOrderUpdatePostTypeString.Replace("<Order_Post_Type>", "U").Replace("<Response_Object>", checkOrderResponse.Content.Replace("'", "''")).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
                                                 daOrderUpdateData.ExecuteNonQuery();
                                             }
                                             else
                                             {
-                                                WriteConsoleMessage($"Error: Returned ExternalId {returnedExternalId} does not match current externalId {orderId}", connString);
+                                                LogHelper.WriteConsoleMessage($"Error: Returned ExternalId {returnedExternalId} does not match current externalId {orderId}", sqlConnString);
                                                 SqlCommand daOrderUpdateData = new SqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "E").Replace("<Response_Object>", checkOrderResponse.Content.Replace("'", "''")).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
                                                 daOrderUpdateData.ExecuteNonQuery();
                                             }
@@ -1442,7 +1406,7 @@ namespace BQ_ACECommerce
                                         else
                                         {
                                             processOrderToEcomm = true;
-                                            WriteConsoleMessage($"External Id {orderId} not found, creating new.", connString);
+                                            LogHelper.WriteConsoleMessage($"External Id {orderId} not found, creating new.", sqlConnString);
                                             SqlCommand daOrderUpdateData = new SqlCommand(queryOrderUpdatePostTypeString.Replace("<Order_Post_Type>", "I").Replace("<Response_Object>", checkOrderResponse.Content.Replace("'", "''")).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
                                             daOrderUpdateData.ExecuteNonQuery();
                                         }
@@ -1540,7 +1504,7 @@ namespace BQ_ACECommerce
 
                                         if (existingOrderId == "-1")
                                         {
-                                            WriteConsoleMessage($"Creating new order - POST Order JSON: {orderJson}", connString);
+                                            LogHelper.WriteConsoleMessage($"Creating new order - POST Order JSON: {orderJson}", sqlConnString);
 
                                             ApiResponse orderResponse = await apiClient.PostCustomerOrOrdersAsync("Create EComOrder", url, orderJson, "ecomOrders"); // path is case sensitive
                                             if (orderResponse.IsSuccess)
@@ -1556,14 +1520,14 @@ namespace BQ_ACECommerce
                                                     if (ecomOrder.TryGetProperty("id", out JsonElement idElement))
                                                     {
                                                         var newOrderId = idElement.GetString();
-                                                        WriteConsoleMessage($"Ecom order id {newOrderId} created with ExternalOrderId {orderId}", connString);
+                                                        LogHelper.WriteConsoleMessage($"Ecom order id {newOrderId} created with ExternalOrderId {orderId}", sqlConnString);
 
                                                         SqlCommand daOrderUpdateData = new SqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "Y").Replace("<Response_Object>", orderResponse.Content.Replace("'", "''")).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
                                                         daOrderUpdateData.ExecuteNonQuery();
                                                     }
                                                     else
                                                     {
-                                                        WriteConsoleMessage($"Could not get id property from {orderResponse.Content}", connString);
+                                                        LogHelper.WriteConsoleMessage($"Could not get id property from {orderResponse.Content}", sqlConnString);
                                                         SqlCommand daOrderUpdateData = new SqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "Z").Replace("<Response_Object>", orderResponse.Content.Replace("'", "''")).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
                                                         daOrderUpdateData.ExecuteNonQuery();
                                                     }
@@ -1571,7 +1535,7 @@ namespace BQ_ACECommerce
                                                 }
                                                 else
                                                 {
-                                                    WriteConsoleMessage($"Could not get ecomOrder property from {orderResponse.Content}", connString);
+                                                    LogHelper.WriteConsoleMessage($"Could not get ecomOrder property from {orderResponse.Content}", sqlConnString);
                                                     SqlCommand daOrderUpdateData = new SqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "Z").Replace("<Response_Object>", orderResponse.Content.Replace("'", "''")).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
                                                     daOrderUpdateData.ExecuteNonQuery();
                                                 }
@@ -1579,7 +1543,7 @@ namespace BQ_ACECommerce
                                             else
                                             {
                                                 var orderResponseContent = $"API error status: {orderResponse.StatusCode} {orderResponse.Content} {orderResponse.ErrorMessage}";
-                                                WriteConsoleMessage($"FAILED Order Post for ExternalOrderId: {orderId} Status: {orderResponse.StatusCode} ErrorMessage: {orderResponseContent}", connString);
+                                                LogHelper.WriteConsoleMessage($"FAILED Order Post for ExternalOrderId: {orderId} Status: {orderResponse.StatusCode} ErrorMessage: {orderResponseContent}", sqlConnString);
                                                 SqlCommand daOrderUpdateData = new SqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "E").Replace("<Response_Object>", orderResponseContent).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
                                                 daOrderUpdateData.ExecuteNonQuery();
 
@@ -1587,7 +1551,7 @@ namespace BQ_ACECommerce
                                         }
                                         else
                                         {
-                                            WriteConsoleMessage($"Updating existing order {existingOrderId} - PUT Order JSON: {orderJson}", connString);
+                                            LogHelper.WriteConsoleMessage($"Updating existing order {existingOrderId} - PUT Order JSON: {orderJson}", sqlConnString);
 
                                             ApiResponse updateResponse = await apiClient.UpdateOrdersAsync(url, orderJson, "ecomOrders", existingOrderId); // path is case sensitive
                                             if (updateResponse.IsSuccess)
@@ -1605,21 +1569,21 @@ namespace BQ_ACECommerce
                                                         var newOrderId = idElement.GetString();
                                                         if (newOrderId == existingOrderId)
                                                         {
-                                                            WriteConsoleMessage($"Ecom order id {newOrderId} updated for ExternalOrderId {orderId}", connString);
+                                                            LogHelper.WriteConsoleMessage($"Ecom order id {newOrderId} updated for ExternalOrderId {orderId}", sqlConnString);
 
                                                             SqlCommand daOrderUpdateData = new SqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "Y").Replace("<Response_Object>", updateResponse.Content.Replace("'", "''")).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
                                                             daOrderUpdateData.ExecuteNonQuery();
                                                         }
                                                         else
                                                         {
-                                                            WriteConsoleMessage($"Updated order id {newOrderId} does not match order we attempted to update {existingOrderId}", connString);
+                                                            LogHelper.WriteConsoleMessage($"Updated order id {newOrderId} does not match order we attempted to update {existingOrderId}", sqlConnString);
                                                             SqlCommand daOrderUpdateData = new SqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "Z").Replace("<Response_Object>", updateResponse.Content.Replace("'", "''")).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
                                                             daOrderUpdateData.ExecuteNonQuery();
                                                         }
                                                     }
                                                     else
                                                     {
-                                                        WriteConsoleMessage($"Could not get id property from {updateResponse.Content}", connString);
+                                                        LogHelper.WriteConsoleMessage($"Could not get id property from {updateResponse.Content}", sqlConnString);
                                                         SqlCommand daOrderUpdateData = new SqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "Z").Replace("<Response_Object>", updateResponse.Content.Replace("'", "''")).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
                                                         daOrderUpdateData.ExecuteNonQuery();
                                                     }
@@ -1627,7 +1591,7 @@ namespace BQ_ACECommerce
                                                 }
                                                 else
                                                 {
-                                                    WriteConsoleMessage($"Could not get ecomOrder property from {updateResponse.Content}", connString);
+                                                    LogHelper.WriteConsoleMessage($"Could not get ecomOrder property from {updateResponse.Content}", sqlConnString);
                                                     SqlCommand daOrderUpdateData = new SqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "Z").Replace("<Response_Object>", updateResponse.Content.Replace("'", "''")).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
                                                     daOrderUpdateData.ExecuteNonQuery();
                                                 }
@@ -1635,7 +1599,7 @@ namespace BQ_ACECommerce
                                             else
                                             {
                                                 var updateResponseContent = $"API error status: {updateResponse.StatusCode} {updateResponse.Content} {updateResponse.ErrorMessage}";
-                                                WriteConsoleMessage($"FAILED to update order {existingOrderId} with ExternalOrderId: {orderId} Status: {updateResponse.StatusCode} ErrorMessage: {updateResponseContent}", connString);
+                                                LogHelper.WriteConsoleMessage($"FAILED to update order {existingOrderId} with ExternalOrderId: {orderId} Status: {updateResponse.StatusCode} ErrorMessage: {updateResponseContent}", sqlConnString);
                                                 SqlCommand daOrderUpdateData = new SqlCommand(queryOrderUpdateString.Replace("<Order_Update_Status>", "E").Replace("<Response_Object>", updateResponse.ErrorMessage).Replace("<MaxTransactionId>", currentTransactionId), emlConnection);
                                                 daOrderUpdateData.ExecuteNonQuery();
 
@@ -1648,27 +1612,27 @@ namespace BQ_ACECommerce
                                 catch (Exception ex)
                                 {
 
-                                    if (loggingSettings.Debug) WriteConsoleMessage($"An error occured while processing Order ID {r["Order_Id"]} Email {r["Order_Email"]}  {ex.Message}", connString);
-                                    WriteConsoleMessage(ex.Message, connString);
+                                    if (loggingSettings.Debug) LogHelper.WriteConsoleMessage($"An error occured while processing Order ID {r["Order_Id"]} Email {r["Order_Email"]}  {ex.Message}", sqlConnString);
+                                    LogHelper.WriteConsoleMessage(ex.Message, sqlConnString);
 
                                 }
                             }
                             catch (Exception ex)
                             {
-                                if (loggingSettings.Debug) WriteConsoleMessage("An error occured while constructing outgoing request to check for Customer.  See next record if an exception message is available.", connString);
-                                WriteConsoleMessage(ex.Message, connString);
+                                if (loggingSettings.Debug) LogHelper.WriteConsoleMessage("An error occured while constructing outgoing request to check for Customer.  See next record if an exception message is available.", sqlConnString);
+                                LogHelper.WriteConsoleMessage(ex.Message, sqlConnString);
                             }
                         }
 
 
 
 
-                        if (loggingSettings.Debug) WriteConsoleMessage("Completed calls to BQ.  See previous lines for any errors that may have occurred.", connString);
-                        WriteConsoleMessage("Ending Service", connString);
+                        if (loggingSettings.Debug) LogHelper.WriteConsoleMessage("Completed calls to BQ.  See previous lines for any errors that may have occurred.", sqlConnString);
+                        LogHelper.WriteConsoleMessage("Ending Service", sqlConnString);
                     } // end try using (SqlConnection emlConnection = new SqlConnection(connString))
                     catch (Exception ex)
                     {
-                        WriteConsoleMessage(ex.Message, connString);
+                        LogHelper.WriteConsoleMessage(ex.Message, sqlConnString);
                     }
                 }
 
