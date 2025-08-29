@@ -679,15 +679,24 @@ namespace BQ_ACECommerce
                 // first query to get orders header info
                 // IMPORTANT: Use order table for order_id and transactionid, otherwise transactions get broken out differently
                 // only get orders that have tickets, max() is used on order columns because there should only be one order per grouping
-                string queryTicketOrders = @"select o.order_id, o.order_email, o.Attending_Patron_Account_id, o.coupon, 
-                        max(o.transactionid) as transactionid,
-                        sum(t.ticket_price) as TicketDetailTotalPrice,
-                        max(o.Tickets_Value) as TicketsValue, max(o.UpSells_Value) as UpSellsValue, sum(t.SALES_TAX) as SalesTax, max(o.Order_Date) as OrderDate, max(o.Insert_Dtm) as InsertDtm, max(o.bq_last_updated_date) as BQ_LastUpdatedDtm
-                        from tbl_MKTECommTicketDetail t
-                        inner join tbl_MKTECommOrderInfo o on t.order_id = o.order_id
-                        where o.order_update_status = 'P'
-                        group by o.order_id, o.order_email, o.Attending_Patron_Account_id, o.coupon
-                        order by o.order_id, o.order_email, o.Attending_Patron_Account_id, o.coupon";
+                string queryTicketOrders = @"select 
+                                    o.order_id, 
+                                    o.order_email, 
+                                    o.Attending_Patron_Account_id, o.coupon, 
+                                    max(o.transactionid) as transactionid,
+                                    sum(t.ticket_price) as TicketDetailTotalPrice,
+                                    max(o.Tickets_Value) as TicketsValue, 
+                                    max(o.UpSells_Value) as UpSellsValue, 
+                                    sum(t.SALES_TAX) as SalesTax, 
+                                    sum(t.CONV_FEE) as ConvenienceFee,
+                                    max(o.Order_Date) as OrderDate, 
+                                    max(o.Insert_Dtm) as InsertDtm, 
+                                    max(o.bq_last_updated_date) as BQ_LastUpdatedDtm
+                                    from tbl_MKTECommTicketDetail t
+                                    inner join tbl_MKTECommOrderInfo o on t.order_id = o.order_id
+                                    where o.order_update_status = 'P'
+                                    group by o.order_id, o.order_email, o.Attending_Patron_Account_id, o.coupon
+                                    order by o.order_id, o.order_email, o.Attending_Patron_Account_id, o.coupon";
                 //having t.order_id in (42761910,42761811,)";
 
                 // second query runs for each order to get product list
@@ -755,7 +764,7 @@ namespace BQ_ACECommerce
                                                         ag.DESCRIPTION as Agency
                                                 FROM	
                                                 (SELECT ORDER_ID, order_line_item_id, TRANSACTION_ID, EVENT_ID FROM `tdc-replication.medieval_times.order_line_item` WHERE ORDER_ID IN  ";
-
+                // Vince TODO: put this back!
                 // string queryOrdersSelectPart2All = @"   (SELECT ORDER_ID FROM `tdc-replication.medieval_times.order_line_item` WHERE Transaction_Id IN 
                 //                                             (SELECT TRANSACTION_ID FROM `tdc-replication.medieval_times.transaction`  WHERE 
                 //                                             bq_last_updated_date > DATETIME_SUB(DATETIME('<BQ_Last_Updated_Dtm>'), INTERVAL 5 MINUTE)) )
@@ -764,7 +773,7 @@ namespace BQ_ACECommerce
 
                 string queryOrdersSelectPart2All = @"   (SELECT ORDER_ID FROM `tdc-replication.medieval_times.order_line_item` WHERE ORDER_ID IN 
                         (
-43261414
+43193405
 )
                                                         ) ) b
                                                     ";
@@ -1314,6 +1323,9 @@ namespace BQ_ACECommerce
                                     if (!customerExists)
                                     {
                                         customerId = "";
+                                        // Vince TODO: undo this spoof and reinstate block comment
+                                        customerId = "999999";
+                                        /*
                                         // add customer 
                                         var wrapper = new EcomCustomerWrapper
                                         {
@@ -1358,7 +1370,7 @@ namespace BQ_ACECommerce
                                             daOrderUpdateData.ExecuteNonQuery();
                                             continue; // go to next row, do not process order if customer could not be created
                                         }
-
+*/
                                     }
 
                                     // double check that we have a valid customer id assigned
@@ -1440,7 +1452,7 @@ namespace BQ_ACECommerce
                                                 ExternalId = t["buyer_type_code"].ToString(),
                                                 Name = t["buyer_type_desc"].ToString(),
                                                 Price = (int)((decimal)t["TicketPrice"] * 100),
-                                                Quantity = (int)((decimal)t["TicketCount"]),
+                                                Quantity = (int)t["TicketCount"],
                                                 //Category = t["buyer_type_group_id"].ToString(),
                                                 //Sku = t["buyer_type_code"].ToString(),
                                                 Description = t["buyer_type_desc"].ToString(),
@@ -1476,9 +1488,9 @@ namespace BQ_ACECommerce
                                                 ExternalCreatedDate = createdDate,
                                                 ExternalUpdatedDate = updatedDate,
                                                 Currency = "USD",
-                                                TotalPrice = (int)(((decimal)r["TicketDetailTotalPrice"] + (decimal)r["SalesTax"]) * 100),
+                                                TotalPrice = (int)( ((decimal)r["TicketDetailTotalPrice"] + (decimal)r["SalesTax"] + (decimal)r["ConvenienceFee"]) * 100 ),
                                                 ShippingAmount = 0,
-                                                TaxAmount = (int)((decimal)r["SalesTax"] * 100),
+                                                TaxAmount = (int)( ((decimal)r["SalesTax"] * 100) + ((decimal)r["ConvenienceFee"] * 100) ),
                                                 DiscountAmount = 0,
                                                 ShippingMethod = "",
                                                 OrderUrl = "",
@@ -1505,7 +1517,8 @@ namespace BQ_ACECommerce
                                         if (existingOrderId == "-1")
                                         {
                                             LogHelper.WriteConsoleMessage($"Creating new order - POST Order JSON: {orderJson}", sqlConnString);
-
+                                            // Vince TODO reinstate block comment
+                                            /*
                                             ApiResponse orderResponse = await apiClient.PostCustomerOrOrdersAsync("Create EComOrder", url, orderJson, "ecomOrders"); // path is case sensitive
                                             if (orderResponse.IsSuccess)
                                             {
@@ -1548,11 +1561,14 @@ namespace BQ_ACECommerce
                                                 daOrderUpdateData.ExecuteNonQuery();
 
                                             }
+                                            */
                                         }
                                         else
                                         {
-                                            LogHelper.WriteConsoleMessage($"Updating existing order {existingOrderId} - PUT Order JSON: {orderJson}", sqlConnString);
 
+                                            LogHelper.WriteConsoleMessage($"Updating existing order {existingOrderId} - PUT Order JSON: {orderJson}", sqlConnString);
+                                            // Vince TODO reinstate block comment
+                                            /*
                                             ApiResponse updateResponse = await apiClient.UpdateOrdersAsync(url, orderJson, "ecomOrders", existingOrderId); // path is case sensitive
                                             if (updateResponse.IsSuccess)
                                             {
@@ -1604,6 +1620,7 @@ namespace BQ_ACECommerce
                                                 daOrderUpdateData.ExecuteNonQuery();
 
                                             }
+                                            */
                                         }
 
                                     }
